@@ -20,7 +20,15 @@
      (non-zero width/height) but `visibility:hidden`. Before tier 3 folded in
      `isRenderedIn`'s semantics, its own gate only rejected zero-area elements,
      so this element still qualified as a match — the same disagreement Task 1
-     closed for tiers 0-2 by way of `filterRendered`. -->
+     closed for tiers 0-2 by way of `filterRendered`.
+     Row 5 — the `nearest-above` counterpart of row 1's tie, at its own `left`
+     column (550px) so it cannot be picked up as a distant, non-winning
+     candidate by any other row's anchor. Two controls directly above the
+     "Total" anchor share the same `top` and `left`, so neither ranking key
+     breaks the tie. `nearest-below`'s tie (row 3) shares its tie-break code
+     with `nearest-above`; without this row that sharing was verified only by
+     reading the source, not by anything that would go red if a future change
+     special-cased one branch and not the other. -->
 <html><body style="margin:0;padding:0">
   <div style="position:relative;height:40px">
     <span style="position:absolute;left:0;top:12px">Amount</span>
@@ -39,5 +47,12 @@
   <div style="position:relative;height:40px">
     <span style="position:absolute;left:0;top:12px">Hidden Field</span>
     <input id="ghost" style="position:absolute;left:120px;top:12px;width:60px;visibility:hidden">
+  </div>
+  <div style="position:relative;height:40px">
+    <input id="above-tie-a" style="position:absolute;left:550px;top:12px;width:60px">
+    <input id="above-tie-b" style="position:absolute;left:550px;top:12px;width:60px">
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:550px;top:12px">Total</span>
   </div>
 </body></html>

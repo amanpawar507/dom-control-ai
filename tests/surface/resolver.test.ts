@@ -203,6 +203,25 @@ describe("resolveBinding", () => {
     });
   });
 
+  // `nearest-above` shares its tie-break block with `nearest-below` (whose tie is
+  // pinned above), so the two relations agreeing on tie behaviour was, before this
+  // test, a code-reading argument rather than something the suite verified for
+  // itself: zeroing out `nearest-above`'s secondary ranking key left all 20
+  // resolver tests green. This pins it directly, independent of `nearest-below`.
+  it("refuses to choose between two equidistant fields above an anchor", async () => {
+    await page.goto(synthetic("geometry"));
+    const binding: Binding = {
+      scope: [],
+      chain: [{ tier: 3, by: "anchor", anchorText: "Total", rel: "nearest-above", accepts: ["input"] }],
+    };
+    // #above-tie-a and #above-tie-b share the same `top` and `left`, so neither
+    // the primary (vertical gap) nor the secondary (horizontal offset) ranking
+    // key breaks the tie.
+    expect(await resolveBinding(page, binding, {})).toMatchObject({
+      ok: false, reason: "ambiguous", tier: 3, count: 2,
+    });
+  });
+
   // Pins the Task 1 fold-in for tier 3: `anchorResolve`'s own gate used to reject
   // only zero-area elements, so a `visibility:hidden` control with a real box
   // (browsers still lay it out, just don't paint it) survived resolution here
