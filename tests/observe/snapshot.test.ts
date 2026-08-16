@@ -113,15 +113,51 @@ describe("observe", () => {
     }
   });
 
-  it("omits a hidden node", async () => {
+  // Pins the third hand-maintained copy of `isRenderedIn`'s clauses — see
+  // the note on the inlined visibility check inside `walk`
+  // (`src/observe/snapshot.ts`). An evaluate callback cannot import and call
+  // `isRenderedIn` (the serialisation guard requires a callback to resolve
+  // entirely within its own module — see `tests/surface/evaluate-serialisation.test.ts`),
+  // so this copy, the canonical predicate in `observe/visibility.ts`
+  // (`tests/observe/visibility.test.ts`), and `anchorResolve`'s own inline
+  // copy in `resolver.ts` (`tests/surface/resolver.test.ts`) each have to be
+  // kept in sync by hand. Before this table, only `display:none` had a pin
+  // here; `visibility:hidden`, `opacity:0` and zero-area could each have
+  // been dropped from this copy with the suite staying green throughout —
+  // verified by mutation (see task-6-report.md): disabling the `opacity:0`
+  // clause left all tests green until this table existed.
+  it.each([
+    ["display:none", "display:none"],
+    ["visibility:hidden", "visibility:hidden"],
+    ["opacity:0", "opacity:0"],
+    ["zero area", "width:0;height:0;border:0;padding:0"],
+  ])("omits a node hidden by %s", async (label, style) => {
+    await page.evaluate(
+      ({ style, label }: { style: string; label: string }) => {
+        const b = document.createElement("button");
+        b.textContent = `HiddenBy(${label})`;
+        b.setAttribute("style", style);
+        document.body.appendChild(b);
+      },
+      { style, label },
+    );
+    const obs = await observe(page);
+    expect(obs.nodes.some((n) => n.name === `HiddenBy(${label})`)).toBe(false);
+  });
+
+  // The fifth case, and the one that must NOT be excluded: offscreen is not
+  // hidden. A control scrolled out of view (or below the fold) is real and
+  // clickable once scrolled to — excluding it would make anything past the
+  // first screenful of a long form unreachable.
+  it("still observes an offscreen node, which is rendered but scrolled away", async () => {
     await page.evaluate(() => {
-      const d = document.createElement("button");
-      d.textContent = "SecretlyHiddenControl";
-      d.style.display = "none";
-      document.body.appendChild(d);
+      const b = document.createElement("button");
+      b.textContent = "OffscreenControl";
+      b.setAttribute("style", "position:absolute;left:9999px;top:0");
+      document.body.appendChild(b);
     });
     const obs = await observe(page);
-    expect(obs.nodes.some((n) => n.name.includes("SecretlyHiddenControl"))).toBe(false);
+    expect(obs.nodes.some((n) => n.name === "OffscreenControl")).toBe(true);
   });
 
   it("omits the screenshot unless asked, because images dominate token cost", async () => {
