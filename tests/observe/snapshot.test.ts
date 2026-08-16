@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { chromium, type Browser, type Page } from "playwright";
-import { observe } from "../../src/observe/snapshot.js";
+import { observe, OBS_ATTR } from "../../src/observe/snapshot.js";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
@@ -25,8 +25,44 @@ describe("observe", () => {
   it("gives every node an opaque handle that is not a selector", async () => {
     const obs = await observe(page);
     for (const n of obs.nodes) {
-      expect(n.handle).toMatch(/^n\d+$/);
+      expect(n.handle).toMatch(/^o\d+n\d+$/);
     }
+  });
+
+  it("invalidates a handle from a previous observation instead of re-pointing it", async () => {
+    // The property: a stale handle must FAIL, not silently resolve to whatever
+    // now occupies that index. Both halves of the mechanism are needed —
+    // clearing old stamps, and qualifying handles with the observation epoch —
+    // so this asserts the observable consequence rather than either mechanism.
+    const first = await observe(page);
+    const stale = first.nodes[0]!.handle;
+    expect(await page.locator(`[${OBS_ATTR}="${stale}"]`).count()).toBe(1);
+
+    const second = await observe(page);
+    expect(second.nodes[0]!.handle).not.toBe(stale);
+    expect(await page.locator(`[${OBS_ATTR}="${stale}"]`).count()).toBe(0);
+  });
+
+  it("strips the stamp from an element that stops being observable", async () => {
+    // The case the epoch alone would miss: an element observed last turn that
+    // is hidden this turn is skipped by the walk, so nothing overwrites its
+    // attribute. Without the clearing pass it keeps a handle that still
+    // resolves — a stale token pointing at a real, hidden element.
+    await page.evaluate(() => {
+      const b = document.createElement("button");
+      b.id = "vanishing";
+      b.textContent = "VanishingControl";
+      document.body.appendChild(b);
+    });
+    const before = await observe(page);
+    const doomed = before.nodes.find((n) => n.name === "VanishingControl")!.handle;
+    expect(await page.locator(`[${OBS_ATTR}="${doomed}"]`).count()).toBe(1);
+
+    await page.evaluate(() => {
+      document.querySelector("#vanishing")!.setAttribute("style", "display:none");
+    });
+    await observe(page);
+    expect(await page.locator(`[${OBS_ATTR}="${doomed}"]`).count()).toBe(0);
   });
 
   /**

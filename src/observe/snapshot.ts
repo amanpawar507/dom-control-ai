@@ -1,6 +1,24 @@
 // src/observe/snapshot.ts
 import type { Page } from "playwright";
-import { HANDLE_ATTR } from "../surface/playwright-web/resolver.js";
+
+/**
+ * The attribute an observation stamps, deliberately NOT the resolver's
+ * `HANDLE_ATTR`. The two systems address elements for different reasons — the
+ * resolver proves a recorded binding, an observation hands the model a
+ * one-turn token — and sharing one attribute meant each silently clobbered the
+ * other's stamps.
+ */
+export const OBS_ATTR = "data-dca-obs";
+
+/**
+ * Observation counter. Handles are qualified with it (`o7n3`), which is what
+ * makes a stale handle fail instead of quietly hitting the wrong element.
+ *
+ * Module-level rather than per-page on purpose: a handle must not be
+ * accidentally valid on a different page either, and a monotonic counter
+ * across the process gives that for free.
+ */
+let epoch = 0;
 
 /**
  * What the model sees, and only what the model sees.
@@ -70,19 +88,29 @@ const OBSERVABLE_SELECTOR =
  * Handles are stamped in this same walk, immediately after an element is
  * accepted, closing the time-of-check/time-of-use gap a separate stamping
  * pass would reopen (see `stampHandle` in `resolver.ts`, which this follows).
- * Unlike `stampHandle`, this does *not* read-before-write: every observation
- * assigns a fresh, densely-packed `n0, n1, …` sequence and overwrites
- * whatever was there, including a stale `n`-handle from an earlier
- * observation or an `h`-handle a prior `resolveBinding` call left behind.
- * Preserving an old value here would risk two elements sharing one handle
- * the moment DOM order shifts between observations — a collision, not a
- * convenience. The trade a caller accepts in exchange is spelled out in this
- * module's own top-level comment: a handle is valid only for the
- * observation that produced it.
+ *
+ * A handle is valid only for the observation that produced it, and that is
+ * enforced here rather than asked of callers. Two things together make a
+ * stale handle fail loudly instead of resolving to some other element, and
+ * neither is sufficient alone:
+ *
+ *   1. Every stamp from a previous observation is cleared at the top of this
+ *      same pass. Without it, an element that was observable last turn and is
+ *      hidden or unobservable this turn would keep its old handle and still
+ *      match.
+ *   2. Handles carry the observation epoch (`o7n3`). Without it, clearing
+ *      alone would let `n3` from the previous turn match whatever happens to
+ *      be `n3` in this one — a different element, silently.
+ *
+ * The result needs no check at the call site, so there is no check anyone can
+ * forget: a handle from an earlier epoch matches nothing, and the existing
+ * exactly-one-match-or-fail path reports it. This is the same lesson as the
+ * Phase 1 policy gate, which was keyed on a name the caller supplied and was
+ * therefore safe only while every caller was honest.
  */
-async function walk(page: Page): Promise<ObservedNode[]> {
+async function walk(page: Page, ep: number): Promise<ObservedNode[]> {
   return page.evaluate(
-    ({ selector, attr }: { selector: string; attr: string }) => {
+    ({ selector, attr, ep }: { selector: string; attr: string; ep: number }) => {
       const results: Array<{
         handle: string;
         role: string;
@@ -91,6 +119,11 @@ async function walk(page: Page): Promise<ObservedNode[]> {
         editable: boolean;
       }> = [];
       let counter = 0;
+
+      // Clear first, in this same pass — see point 1 above.
+      for (const stale of Array.from(document.querySelectorAll(`[${attr}]`))) {
+        stale.removeAttribute(attr);
+      }
 
       for (const el of Array.from(document.querySelectorAll(selector))) {
         // Inlined from `isRenderedIn` — see the note above this function.
@@ -159,7 +192,7 @@ async function walk(page: Page): Promise<ObservedNode[]> {
 
         const editable = (tag === "input" && !isButtonish) || tag === "textarea" || tag === "select" || isContentEditable;
 
-        const handle = `n${counter}`;
+        const handle = `o${ep}n${counter}`;
         counter += 1;
         el.setAttribute(attr, handle);
 
@@ -168,7 +201,7 @@ async function walk(page: Page): Promise<ObservedNode[]> {
 
       return results;
     },
-    { selector: OBSERVABLE_SELECTOR, attr: HANDLE_ATTR },
+    { selector: OBSERVABLE_SELECTOR, attr: OBS_ATTR, ep },
   );
 }
 
@@ -182,7 +215,8 @@ async function walk(page: Page): Promise<ObservedNode[]> {
  * reason.
  */
 export async function observe(page: Page, opts?: { screenshot?: boolean }): Promise<Observation> {
-  const nodes = await walk(page);
+  epoch += 1;
+  const nodes = await walk(page, epoch);
 
   let screenshot: string | null = null;
   if (opts?.screenshot === true) {
