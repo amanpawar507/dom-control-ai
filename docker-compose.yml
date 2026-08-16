@@ -1,0 +1,8 @@
+services:
+  parabank:
+    image: parasoft/parabank:baseline
+    container_name: parabank-baseline
+    ports:
+      - "8081:8080"   # 8080 on the host is Jenkins; do not change
+      - "9001:9001"
+      - "61616:61616"

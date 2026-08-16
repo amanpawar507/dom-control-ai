@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- HAND-AUTHORED. Not captured markup, and not evidence of anything about a
+     real application. Exists only to exercise geometric edge cases that the
+     captured ParaBank fixtures cannot produce.
+
+     Kept deliberately outside tests/fixtures/parabank/, which holds captured
+     evidence only. Nothing hand-written may sit beside captured markup, because
+     the value of that directory is that everything in it was observed rather
+     than authored.
+
+     Row 1 — two accepted controls sharing the same `left`, so their horizontal
+     distance from the anchor is identical. "Nearest to the right" is not a total
+     order here, so the resolver must refuse rather than tie-break.
+     Row 2 — the ordinary case, two controls at genuinely different distances,
+     which must still resolve to the nearer one. -->
+<html><body style="margin:0;padding:0">
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:0;top:12px">Amount</span>
+    <input id="tie-a" style="position:absolute;left:120px;top:12px;width:60px">
+    <input id="tie-b" style="position:absolute;left:120px;top:12px;width:60px">
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:0;top:12px">Reference</span>
+    <input id="near" style="position:absolute;left:120px;top:12px;width:60px">
+    <input id="far"  style="position:absolute;left:400px;top:12px;width:60px">
+  </div>
+</body></html>
