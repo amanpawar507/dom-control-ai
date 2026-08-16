@@ -13,6 +13,47 @@ export interface DriverTurn {
 }
 
 /**
+ * The harness driving the loop is broken. A script that ran out of turns, a
+ * transport that cannot be constructed, a driver misconfigured at the call
+ * site — none of these are things the run can be asked to recover from,
+ * because none of them say anything about the page or the model. They are
+ * bugs in whoever set the run up.
+ *
+ * The discovery loop must let this propagate. That is not a stylistic
+ * preference: `ScriptedDriver` below throws it when a test's script runs out,
+ * and a loop that caught it and escalated would turn "this test wrote too
+ * short a script" into "the loop reached a stopping condition", which is a
+ * clean pass for a test that proved nothing. This project has shipped that
+ * exact false-pass shape nine times; here the two failures are given
+ * different types so a loop cannot conflate them even by accident.
+ */
+export class DriverFault extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DriverFault";
+  }
+}
+
+/**
+ * The model answered, and the answer is unusable — an unknown tool name,
+ * input that fails its schema, an empty turn, a handle naming nothing in the
+ * observation it was answering. Unlike `DriverFault` this is an ordinary
+ * runtime condition: models do produce garbage, and the loop's response is to
+ * stop and escalate rather than to crash the process.
+ *
+ * Separate from `DriverFault` for exactly one reason: the loop treats them
+ * differently. This one is caught and turned into an escalation; that one is
+ * rethrown. Collapsing them into a single type would make the distinction
+ * unavailable at the catch site, which is where it has to be made.
+ */
+export class MalformedModelOutput extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MalformedModelOutput";
+  }
+}
+
+/**
  * The one door the discovery loop uses to talk to a model. Nothing in the
  * loop is allowed to import the Anthropic SDK, construct a client, or read
  * `ANTHROPIC_API_KEY` — it calls `next()` on whatever `ModelDriver` it was
@@ -32,6 +73,13 @@ export interface DriverTurn {
  * `usage()` exists on the interface, not bolted onto a concrete class,
  * precisely so a loop test can assert "nothing was spent" against whatever
  * driver it was handed, without knowing which implementation it is holding.
+ *
+ * `usage()` is **cumulative over the driver's lifetime**, not per-turn. The
+ * loop charges the delta since the previous reading (`src/discover/loop.ts`),
+ * so a driver that returned only the last turn's tokens would be undercharged
+ * on every turn after the first — and undercharging is the direction that
+ * spends real money. This sentence is the contract; an implementation that
+ * disagrees with it is the one that is wrong.
  */
 export interface ModelDriver {
   next(observation: Observation, history: DriverTurn[]): Promise<DriverTurn>;
@@ -52,6 +100,10 @@ export interface ModelDriver {
  * at the call site, not get reinterpreted as "the model gave up," which
  * would send the loop down its escalation path and let the test pass while
  * proving nothing about escalation at all.
+ *
+ * It throws `DriverFault` specifically, not a bare `Error`. The loop only
+ * ever catches `MalformedModelOutput`, so this propagates by construction
+ * rather than by the loop remembering to re-check the type of what it caught.
  */
 export class ScriptedDriver implements ModelDriver {
   private readonly script: Array<{ name: string; input: unknown }>[];
@@ -63,7 +115,7 @@ export class ScriptedDriver implements ModelDriver {
 
   async next(_observation: Observation, _history: DriverTurn[]): Promise<DriverTurn> {
     if (this.cursor >= this.script.length) {
-      throw new Error(
+      throw new DriverFault(
         `ScriptedDriver script exhausted: ${this.script.length} turn(s) scripted, but next() was called again`,
       );
     }
