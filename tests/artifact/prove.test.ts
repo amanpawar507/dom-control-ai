@@ -4,7 +4,7 @@ import { chromium, type Browser, type Page } from "playwright";
 import { pathToFileURL } from "node:url";
 import { resolve as resolvePath } from "node:path";
 import { proveControl } from "../../src/artifact/prove.js";
-import { observe } from "../../src/observe/snapshot.js";
+import { observe, type ObservedNode } from "../../src/observe/snapshot.js";
 import { resolveBinding } from "../../src/surface/playwright-web/resolver.js";
 
 let browser: Browser;
@@ -25,7 +25,7 @@ describe("proveControl", () => {
     await page.goto(fixture("findtrans"));
     const obs = await observe(page);
     const node = obs.nodes.find((n) => n.editable)!;
-    const binding = await proveControl(page, node.handle);
+    const binding = await proveControl(page, node);
 
     expect(binding.chain.length).toBeGreaterThan(0);
     for (const strategy of binding.chain) {
@@ -55,7 +55,7 @@ describe("proveControl", () => {
     const obs = await observe(page);
     const buttons = obs.nodes.filter((n) => n.name === "Find Transactions" && n.role === "button");
     expect(buttons.length).toBe(4);
-    await expect(proveControl(page, buttons[0]!.handle)).rejects.toThrow(/unique/i);
+    await expect(proveControl(page, buttons[0]!)).rejects.toThrow(/unique/i);
   });
 
   // The failure above must be earned, not accidental: it must come from every
@@ -84,7 +84,7 @@ describe("proveControl", () => {
     await page.goto(fixture("login"));
     const obs = await observe(page);
     const user = obs.nodes.find((n) => n.editable)!;
-    const binding = await proveControl(page, user.handle);
+    const binding = await proveControl(page, user);
     expect(binding.chain.every((s) => s.tier >= 0 && s.tier <= 3)).toBe(true);
   });
 
@@ -102,7 +102,7 @@ describe("proveControl", () => {
     await page.goto(fixture("login"));
     const obs = await observe(page);
     const user = obs.nodes.find((n) => n.editable)!;
-    const binding = await proveControl(page, user.handle);
+    const binding = await proveControl(page, user);
 
     const anchorIndex = binding.chain.findIndex((s) => s.by === "anchor");
     const cssIndex = binding.chain.findIndex((s) => s.by === "css");
@@ -123,15 +123,53 @@ describe("proveControl", () => {
   it("refuses to prove a handle from a superseded observation instead of searching for a near-match", async () => {
     await page.goto(fixture("login"));
     const first = await observe(page);
-    const stale = first.nodes.find((n) => n.editable)!.handle;
+    const stale = first.nodes.find((n) => n.editable)!;
 
-    await observe(page); // renumbers the epoch; `stale` now matches nothing
+    await observe(page); // renumbers the epoch; `stale.handle` now matches nothing
 
     await expect(proveControl(page, stale)).rejects.toThrow(/matches 0 element/i);
   });
 
   it("refuses a handle that was never stamped at all", async () => {
     await page.goto(fixture("login"));
-    await expect(proveControl(page, "o999n999")).rejects.toThrow(/matches 0 element/i);
+    const neverStamped: ObservedNode = { handle: "o999n999", role: "textbox", name: "", value: null, editable: true };
+    await expect(proveControl(page, neverStamped)).rejects.toThrow(/matches 0 element/i);
+  });
+
+  // `proveControl` takes role and name from the `ObservedNode` it is handed
+  // rather than recomputing them itself — see the note on `proveControl` in
+  // `src/artifact/prove.ts`. Before that change, this file kept its own copy
+  // of `observe()`'s `walk` role heuristic, and the two had already drifted
+  // for one input shape (a `<div contenteditable>`: `walk` maps it to role
+  // "textbox", this file's old copy fell through to the bare tag "div"). The
+  // fix removes the second copy rather than adding the missing branch, so
+  // there is nothing left in this file to drift. That is easiest to pin not
+  // by reproducing the contenteditable case (Chromium does not, in fact,
+  // expose an implicit "textbox" role for a bare contenteditable element
+  // either way, so that specific input can't distinguish "uses the passed
+  // role" from "recomputes it" — both produce the same no-match outcome) but
+  // directly: hand `proveControl` a role deliberately wrong for a real,
+  // provable element, and confirm it fails instead of silently correcting
+  // itself back to the true role by reading the DOM.
+  it("uses the role and name it is handed, not values re-derived from the DOM", async () => {
+    await page.goto(fixture("login"));
+    const obs = await observe(page);
+    const adminLink = obs.nodes.find((n) => n.name === "Admin Page")!;
+    expect(adminLink.role).toBe("link");
+
+    // Positive: the real node proves at tier 1 via its actual role.
+    const real = await proveControl(page, adminLink);
+    expect(real.chain).toEqual([{ tier: 1, by: "role", role: "link", name: "Admin Page" }]);
+
+    // Negative: same handle, role deliberately swapped for one this element
+    // does not have. If `proveControl` re-derived role from the live DOM
+    // instead of trusting the argument, it would silently recompute "link"
+    // again and this would succeed anyway — indistinguishable from the fix
+    // actually being in place. It must fail instead: nothing else about this
+    // node proves unique (see the chain above — a lone tier-1 entry, no
+    // surviving css or anchor candidate), so a `proveControl` that actually
+    // used the wrong role throws.
+    const wrongRole: ObservedNode = { ...adminLink, role: "button" };
+    await expect(proveControl(page, wrongRole)).rejects.toThrow(/unique/i);
   });
 });
