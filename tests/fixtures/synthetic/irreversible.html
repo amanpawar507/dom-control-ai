@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- HAND-AUTHORED. Not captured markup, and not evidence of anything about a
+     real application.
+
+     ParaBank's own admin page could not be captured here: its form actions carry
+     a live `;jsessionid=` value, and no session token may enter a fixture. So the
+     two control *shapes* that page uses are reproduced by hand instead, with the
+     details that matter to risk classification preserved exactly:
+
+       - `<button type="submit" name="action" value="CLEAN">Clean</button>`
+         The accessible name is the *text* ("Clean"); the `value` attribute is
+         "CLEAN", a different string. A name derived from `value` would be matched
+         against a rule written for "Clean" and would silently miss, which is why
+         the derivation must not read `value` for a `<button>`.
+
+       - `<input type="submit" value="Shutdown" />`
+         The mirror case: an input's accessible name *is* its `value`, and it has
+         no text content at all.
+
+     The decoy button exists so a test can show that the classification
+     discriminates between controls rather than escalating everything. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Irreversible control shapes</title>
+  </head>
+  <body>
+    <form name="cleanDB" action="#" method="POST">
+      <button type="submit" class="button" name="action" value="INIT">
+        Initialize
+      </button>
+      <button type="submit" class="button" name="action" value="CLEAN">
+        Clean
+      </button>
+    </form>
+
+    <form name="toggleJms" action="#" method="POST">
+      <input type="submit" class="button" value="Shutdown" />
+    </form>
+
+    <form name="labelled" action="#" method="POST">
+      <button type="button" id="aliased" aria-label="Clean">Purge everything</button>
+    </form>
+
+    <p><a id="decoy" href="#">Accounts Overview</a></p>
+  </body>
+</html>

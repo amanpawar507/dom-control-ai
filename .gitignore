@@ -31,7 +31,15 @@ playwright-report/
 test-results/
 .playwright/
 
+# Run evidence — the output of a run, not source. The directory is tracked so
+# a run has somewhere to write; the per-run JSONL is not.
+evidence/*
+!evidence/.gitkeep
+
 # OS / editor
 .DS_Store
 .idea/
 .vscode/
+
+# SDD scratch workspace
+.superpowers/

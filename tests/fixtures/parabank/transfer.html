@@ -1,0 +1,246 @@
+<!DOCTYPE html><html><head>
+		<meta charset="UTF-8">
+		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+		<title>ParaBank | Transfer Funds</title>
+		<link href="template.css" rel="stylesheet" type="text/css">
+		<link href="style.css" rel="stylesheet" type="text/css">
+		<script src="webjars/jquery/4.0.0/jquery.min.js"></script>
+	</head>
+
+	<body>
+		<div id="mainPanel">
+			
+				
+				
+					
+
+
+
+<div id="topPanel">
+  <a href="admin.htm"><img src="images/clear.gif" width="56" height="42" border="0" class="admin"></a>
+  <a href="index.htm"><img src="images/logo.gif" alt="ParaBank" width="136" height="31" border="0" class="logo" title="ParaBank"></a>
+  <p class="caption">Experience the difference</p>
+</div>
+<div id="headerPanel" style="background: url(images/header-customer.jpg) 0 0 no-repeat;">
+  
+
+
+<ul class="leftmenu">
+  <li class="Solutions">Solutions</li>
+  <li><a href="about.htm">About Us</a></li>
+  <li><a href="services.htm">Services</a></li>
+  <li><a href="http://www.parasoft.com/jsp/products.jsp">Products</a></li>
+  <li><a href="http://www.parasoft.com/jsp/pr/contacts.jsp">Locations</a></li>
+  <li><a href="admin.htm">Admin Page</a></li>
+  
+</ul>
+  
+
+
+<ul class="button">
+  <li class="home"><a href="index.htm">home</a></li>
+  <li class="aboutus"><a href="about.htm">about</a></li>
+  <li class="contact"><a href="contact.htm">contact</a></li>
+</ul>
+</div>
+				
+			
+			<div id="bodyPanel">
+				<div id="leftPanel">
+					
+						
+						
+							
+
+
+<p class="smallText"><b>Welcome</b> John Smith</p>
+
+<h2>Account Services</h2>
+
+
+
+<ul>
+  <li><a href="openaccount.htm">Open New Account</a></li>
+  <li><a href="overview.htm">Accounts Overview</a></li>
+  <li><a href="transfer.htm">Transfer Funds</a></li>
+  <li><a href="billpay.htm">Bill Pay</a></li>
+  <li><a href="findtrans.htm">Find Transactions</a></li>
+  <li><a href="updateprofile.htm">Update Contact Info</a></li>
+  <li><a href="requestloan.htm">Request Loan</a></li>
+  <li><a href="logout.htm">Log Out</a></li>
+</ul>
+						
+					
+				</div>
+				<div id="rightPanel">
+					
+
+
+
+<div id="transferApp">
+	<div id="showForm">
+		<h1 class="title">
+			Transfer Funds
+		</h1>
+		<p id="amount.errors" class="error" style="display: none;">
+			The amount cannot be empty. 
+		</p>
+		<p id="amount.errors" class="error" style="display: none;">
+			Please enter a valid amount.
+		</p>
+		<form id="transferForm">
+			<p>
+				<b>Amount:</b> $<input id="amount" type="text" name="input">
+			</p>
+			<div>
+				From account #
+				<select id="fromAccountId" class="input"></select>
+				to account #
+				<select id="toAccountId" class="input"></select>
+			</div>
+			<br>
+			<div>
+				<input type="submit" class="button" value="Transfer">
+			</div>
+		</form>
+	</div>
+	<div id="showResult" style="display: none;">
+		<h1 class="title">Transfer Complete!</h1>
+		<p>
+			<span id="amountResult"></span> has been transferred from account #<span id="fromAccountIdResult"></span> to account #<span id="toAccountIdResult"></span>.
+		</p>
+		<p>
+			See Account Activity for more details.
+		</p>
+	</div>
+	<div id="showError" style="display: none;">
+		<h1 class="title">
+			Error!
+		</h1>
+		<p class="error">
+			An internal error has occurred and has been logged.
+		</p>
+	</div>
+</div>
+
+<script>
+    $(document).ready(function() {
+        function getAccounts() {
+            $.ajax({
+                url: "services_proxy/bank/customers/" + 12212 + "/accounts",
+                type: "GET",
+                timeout: 30000,
+                success: function(response) {
+                    var accounts = response;
+                    $.each(accounts, function(index, account) {
+                        $('#fromAccountId, #toAccountId').append($('<option>', {
+                            value: account.id,
+                            text: account.id
+                        }));
+                    });
+                    $('#fromAccountId option:first-child').attr('selected', true);
+                    $('#toAccountId option:first-child').attr('selected', true);
+                    
+                    $('#fromAccountId').change(function() {
+                        var selectedValue = $(this).val();
+                        $('#fromAccountId option').removeAttr('selected');
+                        $('#fromAccountId option[value="' + selectedValue + '"]').attr('selected', 'selected');
+                    });
+
+					$('#toAccountId').change(function() {
+						var selectedValue = $(this).val();
+						$('#toAccountId option').removeAttr('selected');
+						$('#toAccountId option[value="' + selectedValue + '"]').attr('selected', 'selected');
+					});
+                    
+                },
+                error: function(xhr, status, error) {
+                    showError(xhr);
+                }
+            });
+        }
+
+        $('#transferForm').submit(function(event) {
+            event.preventDefault();
+            resetErrors();
+
+            var amount = $('#amount').val();
+            var fromAccountId = $('#fromAccountId').val();
+            var toAccountId = $('#toAccountId').val();
+
+            var url = "services_proxy/bank/transfer?fromAccountId=" + fromAccountId + "&toAccountId=" + toAccountId + "&amount=" + amount;
+
+            $.ajax({
+                url: url,
+                type: "POST",
+                timeout: 30000,
+                dataType: 'text',
+                success: function(response) {
+                    $('#showForm').hide();
+                    $('#showResult').show();
+                    $('#amountResult').text(formatCurrency(amount));
+                    $('#fromAccountIdResult').text(fromAccountId);
+                    $('#toAccountIdResult').text(toAccountId);
+                },
+                error: function(xhr, status, error) {
+                    showError(xhr);
+                }
+            });
+        });
+
+        function resetErrors() {
+            $('#amount.errors').hide();
+        }
+
+        function showError(xhr) {
+            $('#showForm, #showResult').hide();
+            $('#showError').show();
+            var status = xhr.status > 0 ? xhr.status : "timeout";
+            var data = xhr.responseJSON ? xhr.responseJSON.message : "Server timeout";
+            console.error("Server returned " + status + ": " + data);
+        }
+        
+        function formatCurrency(amount) {
+        	if (amount == null) {
+        		return "$0.00";
+        	}
+            amount = parseFloat(amount);
+            var isNegative = amount < 0;
+            amount = Math.abs(amount);
+            var formattedAmount = amount.toFixed(2);
+            formattedAmount = (isNegative ? '-$' : '$') + formattedAmount;
+            return formattedAmount;
+        }
+        
+        getAccounts();
+    });
+</script>
+
+				</div>
+			</div>
+		</div>
+		
+
+
+<div id="footermainPanel">
+  <div id="footerPanel">
+    <ul>
+      <li><a href="index.htm">Home</a>| </li>
+      <li><a href="about.htm">About Us</a>| </li>
+      <li><a href="services.htm">Services</a>| </li>
+      <li><a href="http://www.parasoft.com/jsp/products.jsp">Products</a>| </li>
+      <li><a href="http://www.parasoft.com/jsp/pr/contacts.jsp">Locations</a>| </li>
+      <li><a href="http://forums.parasoft.com/">Forum</a>| </li>
+      <li><a href="sitemap.htm">Site Map</a>| </li>
+      <li><a href="contact.htm">Contact Us</a></li>
+    </ul>
+    <p class="copyright">© Parasoft. All rights reserved.</p>
+    <ul class="visit">
+      <li>Visit us at:</li>
+      <li><a href="http://www.parasoft.com/" target="_blank">www.parasoft.com</a></li>
+    </ul>
+  </div>
+</div>
+	
+
+</body></html>
