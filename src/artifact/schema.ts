@@ -109,15 +109,23 @@ const CapabilitySchema = z
  * `control` name, resolved against `bindings` at replay time. That
  * indirection is what makes `flow` shareable across tenants: the same steps
  * replay under any tenant's `bindings` overlay.
+ *
+ * `value` is required for `fill` and `select`, and absent from `click` —
+ * modelled as a discriminated union on `action` rather than one shape with
+ * an optional field, so "a fill step with nothing to fill" is unrepresentable
+ * rather than merely discouraged. A click carries no `value` at all (not
+ * even as an allowed-but-unused field): `click` legitimately has none, and
+ * `.strict()` on each branch closes off a stray `value` sneaking onto it.
  */
-const ActStepSchema = z
-  .object({
-    kind: z.literal("act"),
-    action: z.enum(["click", "fill", "select"]),
-    control: z.string(),
-    value: z.string().optional(),
-  })
-  .strict();
+const ActStepSchema = z.discriminatedUnion("action", [
+  z.object({ kind: z.literal("act"), action: z.literal("click"), control: z.string() }).strict(),
+  z
+    .object({ kind: z.literal("act"), action: z.literal("fill"), control: z.string(), value: z.string() })
+    .strict(),
+  z
+    .object({ kind: z.literal("act"), action: z.literal("select"), control: z.string(), value: z.string() })
+    .strict(),
+]);
 
 const CheckpointStepSchema = z
   .object({

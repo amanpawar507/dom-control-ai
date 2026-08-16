@@ -100,6 +100,24 @@ describe("artifact schema", () => {
     void illegal;
   });
 
+  // A `fill`/`select` step with no `value` is not a coherent recording —
+  // there is nothing to fill or select. The schema is the only thing that
+  // would catch this (nothing downstream in this phase consumes
+  // `flow.steps` yet), so it has to be structural, not merely conventional.
+  it.each(["fill", "select"] as const)("rejects a %s step with no value", (action) => {
+    const broken = structuredClone(valid);
+    broken.flow.steps.push({ kind: "act", action, control: "txn_id" } as never);
+    expect(() => parseArtifact(broken)).toThrow();
+  });
+
+  it("still accepts a click step with no value, which legitimately has none", () => {
+    // The positive half of the pin above: `click` must not be swept into the
+    // same requirement `fill`/`select` now carry.
+    const broken = structuredClone(valid);
+    broken.flow.steps.push({ kind: "act", action: "click", control: "find_btn" });
+    expect(() => parseArtifact(broken)).not.toThrow();
+  });
+
   it("rejects an artifact carrying an unknown top-level field", () => {
     // The overlay invariant (a tenant override may modify `bindings` only)
     // holds by construction: neither `capability` nor `flow` has any
