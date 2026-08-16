@@ -39,7 +39,16 @@
      above already is) cannot tell a correct secondary-key formula from one
      that always returns the same value for every candidate, because the
      primary key alone would already pick a winner before the secondary key is
-     ever consulted. -->
+     ever consulted.
+     Row 7 — the other three `isRenderedIn` exclusion cases besides
+     `visibility:hidden` (row 4), plus the one case that must NOT be excluded.
+     `tests/observe/visibility.test.ts` pins all five against the canonical
+     `isRenderedIn` directly; tier 3 can only reach the same five behaviourally,
+     through `anchorResolve`'s independent inline copy, and only
+     `visibility:hidden` had a tier-3 pin of its own until now. "Offscreen
+     Field"'s candidate sits at left:9999px rather than off to the left, so it
+     is still "to the right" of its anchor and a `nearest-right` chain can
+     reach it — off-canvas, not off-relation. -->
 <html><body style="margin:0;padding:0">
   <div style="position:relative;height:40px">
     <span style="position:absolute;left:0;top:12px">Amount</span>
@@ -75,5 +84,21 @@
   </div>
   <div style="position:relative;height:40px">
     <span style="position:absolute;left:250px;top:12px">Subtotal</span>
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:0;top:12px">None Field</span>
+    <input id="ghost-none" style="position:absolute;left:120px;top:12px;width:60px;display:none">
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:0;top:12px">Invisible Field</span>
+    <input id="ghost-opacity" style="position:absolute;left:120px;top:12px;width:60px;opacity:0">
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:0;top:12px">Zero Field</span>
+    <input id="ghost-zero" style="position:absolute;left:120px;top:12px;width:0;height:0;border:0;padding:0">
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:0;top:12px">Offscreen Field</span>
+    <input id="offscreen-input" style="position:absolute;left:9999px;top:12px;width:60px">
   </div>
 </body></html>

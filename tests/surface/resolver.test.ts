@@ -248,21 +248,48 @@ describe("resolveBinding", () => {
     expect(await page.locator(`[data-dca-handle="${res.handle}"]`).getAttribute("id")).toBe("sub-near");
   });
 
-  // Pins the Task 1 fold-in for tier 3: `anchorResolve`'s own gate used to reject
-  // only zero-area elements, so a `visibility:hidden` control with a real box
-  // (browsers still lay it out, just don't paint it) survived resolution here
-  // while tiers 0-2 (via `filterRendered`) rejected the same shape of node. Now
-  // all four tiers route through the same `isRenderedIn` semantics.
-  it("does not resolve a visibility:hidden candidate at tier 3, even with real box area", async () => {
+  // Pins the Task 1 fold-in for tier 3 across all five cases `isRenderedIn`
+  // checks, not just `visibility:hidden`. `anchorResolve` cannot import
+  // `isRenderedIn` and call it — the serialisation guard requires an evaluate
+  // callback to resolve entirely within its own module — so the inline copy in
+  // resolver.ts is independent text that has to be kept in sync by hand. Before
+  // this table, only `visibility:hidden` had a tier-3 pin; `display:none`,
+  // `opacity:0` and zero-area could each have been dropped from the inline copy
+  // with the suite staying green throughout. `tests/observe/visibility.test.ts`
+  // pins the same five cases directly against the canonical `isRenderedIn`; this
+  // is their tier-3 counterpart, so a clause missing from either copy fails the
+  // one case it stopped covering, in whichever file reaches it.
+  it.each(["None Field", "Hidden Field", "Invisible Field", "Zero Field"])(
+    "does not resolve a candidate at tier 3 hidden behind the %s anchor",
+    async (anchorText) => {
+      await page.goto(synthetic("geometry"));
+      const binding: Binding = {
+        scope: [],
+        chain: [{ tier: 3, by: "anchor", anchorText, rel: "nearest-right", accepts: ["input"] }],
+      };
+      const res = await resolveBinding(page, binding, {});
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("no-match");
+    },
+  );
+
+  // The fifth case, and the one that must NOT be excluded: offscreen is not the
+  // same as hidden. A control below the fold, or scrolled past, is real and
+  // clickable once scrolled to — treating it as hidden would make anything past
+  // the first screenful of a long form unreachable. `#offscreen-input` sits at
+  // left:9999px, well outside the viewport but still "to the right" of its
+  // anchor, so `nearest-right` can reach it.
+  it("still resolves an offscreen candidate at tier 3, which is rendered but scrolled away", async () => {
     await page.goto(synthetic("geometry"));
     const binding: Binding = {
       scope: [],
-      chain: [{ tier: 3, by: "anchor", anchorText: "Hidden Field", rel: "nearest-right", accepts: ["input"] }],
+      chain: [{ tier: 3, by: "anchor", anchorText: "Offscreen Field", rel: "nearest-right", accepts: ["input"] }],
     };
     const res = await resolveBinding(page, binding, {});
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.reason).toBe("no-match");
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(await page.locator(`[data-dca-handle="${res.handle}"]`).getAttribute("id")).toBe("offscreen-input");
   });
 
   // Frame and shadow descent belong with the observer in Phase 2. What must not
