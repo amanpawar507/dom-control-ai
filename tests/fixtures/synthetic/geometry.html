@@ -28,7 +28,18 @@
      breaks the tie. `nearest-below`'s tie (row 3) shares its tie-break code
      with `nearest-above`; without this row that sharing was verified only by
      reading the source, not by anything that would go red if a future change
-     special-cased one branch and not the other. -->
+     special-cased one branch and not the other.
+     Row 6 — `nearest-above` ranking, at its own `left` column (250px).
+     #sub-far sits a full row further from "Subtotal" than #sub-near/#sub-offset,
+     so it must lose on the primary (vertical-gap) key. #sub-near and #sub-offset
+     share that same primary distance — #sub-near is column-aligned with the
+     anchor (zero horizontal offset) and #sub-offset is not, so only the
+     secondary key tells them apart. The unique winner must be #sub-near: a
+     ranking test with only a farther/nearer pair (as the primary-key case
+     above already is) cannot tell a correct secondary-key formula from one
+     that always returns the same value for every candidate, because the
+     primary key alone would already pick a winner before the secondary key is
+     ever consulted. -->
 <html><body style="margin:0;padding:0">
   <div style="position:relative;height:40px">
     <span style="position:absolute;left:0;top:12px">Amount</span>
@@ -54,5 +65,15 @@
   </div>
   <div style="position:relative;height:40px">
     <span style="position:absolute;left:550px;top:12px">Total</span>
+  </div>
+  <div style="position:relative;height:40px">
+    <input id="sub-far" style="position:absolute;left:250px;top:12px;width:60px">
+  </div>
+  <div style="position:relative;height:40px">
+    <input id="sub-near" style="position:absolute;left:250px;top:12px;width:60px">
+    <input id="sub-offset" style="position:absolute;left:280px;top:12px;width:60px">
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:250px;top:12px">Subtotal</span>
   </div>
 </body></html>

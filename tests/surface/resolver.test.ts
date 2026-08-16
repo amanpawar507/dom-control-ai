@@ -222,6 +222,32 @@ describe("resolveBinding", () => {
     });
   });
 
+  // The "resolves a field above its label" test above (login.html) proves
+  // direction against real evidence, but only one input qualifies as "above"
+  // Password there, so it cannot exercise ranking: a bug that always returned
+  // the first qualifying candidate would still pass it. This proves both
+  // ranking keys against #sub-far/#sub-near/#sub-offset:
+  //   - #sub-far sits a full row further from "Subtotal" than the other two,
+  //     so it must lose on the primary (vertical-gap) key.
+  //   - #sub-near and #sub-offset are equidistant on the primary key —
+  //     #sub-near is column-aligned with the anchor and #sub-offset is not, so
+  //     only the secondary (horizontal-offset) key can tell them apart. A
+  //     primary-only ranking test (farther vs. nearer, as the `nearest-right`
+  //     "still picks the nearer" test above already covers for that relation)
+  //     would never reach the secondary key at all, because the primary key
+  //     alone would already have picked a unique winner.
+  it("picks the nearest of several candidates above an anchor by vertical gap, then horizontal offset", async () => {
+    await page.goto(synthetic("geometry"));
+    const binding: Binding = {
+      scope: [],
+      chain: [{ tier: 3, by: "anchor", anchorText: "Subtotal", rel: "nearest-above", accepts: ["input"] }],
+    };
+    const res = await resolveBinding(page, binding, {});
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(await page.locator(`[data-dca-handle="${res.handle}"]`).getAttribute("id")).toBe("sub-near");
+  });
+
   // Pins the Task 1 fold-in for tier 3: `anchorResolve`'s own gate used to reject
   // only zero-area elements, so a `visibility:hidden` control with a real box
   // (browsers still lay it out, just don't paint it) survived resolution here
