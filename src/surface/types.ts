@@ -33,7 +33,13 @@ export type Strategy =
   | { tier: 0; by: "testid"; value: string }
   | { tier: 1; by: "role"; role: string; name: string }
   | { tier: 2; by: "css"; value: string }
-  | { tier: 3; by: "anchor"; anchorText: string; rel: "nearest-right"; accepts: string[] };
+  | {
+      tier: 3;
+      by: "anchor";
+      anchorText: string;
+      rel: "nearest-right" | "nearest-below" | "nearest-above";
+      accepts: string[];
+    };
 
 export interface Fingerprint {
   matches?: string;

@@ -12,7 +12,15 @@
      distance from the anchor is identical. "Nearest to the right" is not a total
      order here, so the resolver must refuse rather than tie-break.
      Row 2 — the ordinary case, two controls at genuinely different distances,
-     which must still resolve to the nearer one. -->
+     which must still resolve to the nearer one.
+     Row 3 — the `nearest-below` counterpart of row 1's tie: two controls
+     directly under the "Amount" anchor sharing the same `top` and `left`, so
+     neither their vertical gap nor their horizontal offset breaks the tie.
+     Row 4 — a candidate to the right of its anchor with real box area
+     (non-zero width/height) but `visibility:hidden`. Before tier 3 folded in
+     `isRenderedIn`'s semantics, its own gate only rejected zero-area elements,
+     so this element still qualified as a match — the same disagreement Task 1
+     closed for tiers 0-2 by way of `filterRendered`. -->
 <html><body style="margin:0;padding:0">
   <div style="position:relative;height:40px">
     <span style="position:absolute;left:0;top:12px">Amount</span>
@@ -23,5 +31,13 @@
     <span style="position:absolute;left:0;top:12px">Reference</span>
     <input id="near" style="position:absolute;left:120px;top:12px;width:60px">
     <input id="far"  style="position:absolute;left:400px;top:12px;width:60px">
+  </div>
+  <div style="position:relative;height:40px">
+    <input id="below-tie-a" style="position:absolute;left:0;top:12px;width:60px">
+    <input id="below-tie-b" style="position:absolute;left:0;top:12px;width:60px">
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:0;top:12px">Hidden Field</span>
+    <input id="ghost" style="position:absolute;left:120px;top:12px;width:60px;visibility:hidden">
   </div>
 </body></html>

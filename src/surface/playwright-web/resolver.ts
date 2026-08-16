@@ -91,8 +91,12 @@ async function stampHandle(loc: Locator): Promise<Handle> {
 
 /**
  * Tier 3: anchor-relative resolution. Find the anchor's text, then the nearest
- * accepted control to its right on the same visual row. Geometry, not markup —
- * this is the tier that survives unassociated labels.
+ * accepted control in the declared direction — `nearest-right` on the same
+ * visual row, or `nearest-below`/`nearest-above` in the same visual column.
+ * Geometry, not markup — this is the tier that survives unassociated labels.
+ * `nearest-below` exists because ParaBank's own login form needs it: measured
+ * live, the `Username` label sits at y=287-302 and its input at y=305-323,
+ * same x — stacked, not side by side, so `nearest-right` cannot reach it.
  *
  * The anchor box is measured from the *text node* with a DOM Range rather than
  * from an element locator. `page.locator('text="X"')` returns the smallest
@@ -128,7 +132,17 @@ async function anchorResolve(
   if (anchorText.trim() === "" || selector === "") return [];
 
   const handles = await page.evaluate(
-    ({ anchorText, selector, attr }: { anchorText: string; selector: string; attr: string }): string[] => {
+    ({
+      anchorText,
+      selector,
+      attr,
+      rel,
+    }: {
+      anchorText: string;
+      selector: string;
+      attr: string;
+      rel: "nearest-right" | "nearest-below" | "nearest-above";
+    }): string[] => {
       // Sub-pixel slack for float comparison of layout coordinates.
       const EPSILON = 0.5;
       // Whitespace normalisation is written out at both use sites rather than
@@ -155,28 +169,75 @@ async function anchorResolve(
       const picked = new Set<Element>();
 
       for (const a of anchors) {
-        // Collect every control on this row to the right, then take the minimum in a
-        // second pass. Selecting during the scan would make the outcome depend on
-        // iteration order whenever two gaps are equal.
-        const qualified: Array<{ el: Element; gap: number }> = [];
+        // Collect every qualifying control, then take the minimum in a second
+        // pass. Selecting during the scan would make the outcome depend on
+        // iteration order whenever two candidates are equally near.
+        //
+        // `primary` is the ranking distance for the declared relation — the
+        // rightward gap for `nearest-right`, the vertical gap for
+        // `nearest-below`/`nearest-above`. `secondary` breaks a primary-distance
+        // tie for the below/above relations (horizontal offset from the anchor);
+        // it is fixed at 0 for `nearest-right`, which ranks on the single gap it
+        // always has.
+        const qualified: Array<{ el: Element; primary: number; secondary: number }> = [];
         for (const el of candidates) {
+          // Inlined from `isRenderedIn` in observe/visibility.ts — an evaluate
+          // callback cannot close over module scope, so the two copies must stay
+          // identical. Before this fold-in, this gate only rejected zero-area
+          // elements, so a `visibility:hidden` or `opacity:0` control with real
+          // layout area still qualified as a tier-3 candidate while tiers 0-2
+          // (via `filterRendered`) rejected the same node — the ladder
+          // disagreeing with itself, exactly what the shared predicate exists to
+          // close everywhere else.
+          const style = window.getComputedStyle(el);
+          if (style.display === "none") continue;
+          if (style.visibility === "hidden" || style.visibility === "collapse") continue;
+          if (Number(style.opacity) === 0) continue;
+          if (!el.isConnected) continue;
           const b = el.getBoundingClientRect();
-          if (b.width === 0 && b.height === 0) continue; // not rendered
-          const sameRow = b.top < a.bottom && b.bottom > a.top;
-          const toTheRight = b.left >= a.right - 1;
-          if (!sameRow || !toTheRight) continue;
-          qualified.push({ el, gap: b.left - a.right });
+          if (b.width === 0 || b.height === 0) continue;
+
+          if (rel === "nearest-right") {
+            const sameRow = b.top < a.bottom && b.bottom > a.top;
+            const toTheRight = b.left >= a.right - EPSILON;
+            if (!sameRow || !toTheRight) continue;
+            qualified.push({ el, primary: b.left - a.right, secondary: 0 });
+          } else if (rel === "nearest-below") {
+            const midY = b.top + b.height / 2;
+            const overlapsColumn = b.left < a.right && b.right > a.left;
+            const isBelow = midY > a.bottom - EPSILON;
+            if (!overlapsColumn || !isBelow) continue;
+            qualified.push({ el, primary: b.top - a.bottom, secondary: Math.abs(b.left - a.left) });
+          } else {
+            const midY = b.top + b.height / 2;
+            const overlapsColumn = b.left < a.right && b.right > a.left;
+            const isAbove = midY < a.top + EPSILON;
+            if (!overlapsColumn || !isAbove) continue;
+            qualified.push({ el, primary: a.top - b.bottom, secondary: Math.abs(b.left - a.left) });
+          }
         }
         if (qualified.length === 0) continue;
 
-        // "Nearest to the right" is a total order only while the distances differ.
-        // Equidistant controls — nested, overlapping, or absolutely positioned — are
-        // a genuine tie, and picking the first would be first-of-many by another
-        // name. Every tied winner is kept so the chain reports `ambiguous` through
-        // its normal path.
-        let minGap = Number.POSITIVE_INFINITY;
-        for (const q of qualified) if (q.gap < minGap) minGap = q.gap;
-        for (const q of qualified) if (q.gap - minGap <= EPSILON) picked.add(q.el);
+        // "Nearest" is a total order only while the primary distances differ.
+        // Equidistant controls — nested, overlapping, or absolutely positioned —
+        // are a genuine tie, and picking the first would be first-of-many by
+        // another name.
+        let minPrimary = Number.POSITIVE_INFINITY;
+        for (const q of qualified) if (q.primary < minPrimary) minPrimary = q.primary;
+        const nearest = qualified.filter((q) => q.primary - minPrimary <= EPSILON);
+
+        if (nearest.length === 1) {
+          picked.add(nearest[0]!.el);
+          continue;
+        }
+
+        // The primary distance ties — break it on the secondary key. Every
+        // winner still tied after that is kept, so the chain reports
+        // `ambiguous` through its normal path rather than this function
+        // guessing on the caller's behalf.
+        let minSecondary = Number.POSITIVE_INFINITY;
+        for (const q of nearest) if (q.secondary < minSecondary) minSecondary = q.secondary;
+        for (const q of nearest) if (q.secondary - minSecondary <= EPSILON) picked.add(q.el);
       }
 
       // One control per anchor occurrence. If the anchor text itself occurs in
@@ -193,7 +254,7 @@ async function anchorResolve(
         return id;
       });
     },
-    { anchorText, selector, attr: HANDLE_ATTR },
+    { anchorText, selector, attr: HANDLE_ATTR, rel: s.rel },
   );
 
   return handles.map((h) => page.locator(`[${HANDLE_ATTR}="${h}"]`));

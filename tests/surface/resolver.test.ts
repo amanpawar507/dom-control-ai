@@ -154,6 +154,72 @@ describe("resolveBinding", () => {
     expect(await page.locator("[data-dca-handle]").getAttribute("id")).toBe("near");
   });
 
+  // ParaBank's own login form is the reason `nearest-below` exists at all.
+  // Measured live: the Username label sits at y=287-302 and its input at
+  // y=305-323, same x — stacked, not side by side, so `nearest-right` cannot
+  // reach it. `login.html` loads no stylesheets, so its blocks stack vertically
+  // in the fixture too, which is exactly the geometry this relation needs.
+  it("resolves a field below its label, the ParaBank login shape", async () => {
+    await page.goto(fixture("login"));
+    const binding: Binding = {
+      scope: [],
+      chain: [{ tier: 3, by: "anchor", anchorText: "Username", rel: "nearest-below", accepts: ["input"] }],
+    };
+    const res = await resolveBinding(page, binding, {});
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const name = await page.locator(`[data-dca-handle="${res.handle}"]`).getAttribute("name");
+    expect(name).toBe("username");
+  });
+
+  // The mirror relation, exercised against the same captured markup: the
+  // control immediately above the "Password" label, column-aligned with it, is
+  // the username input. No new fixture markup needed — `nearest-above` is a
+  // structural mirror of `nearest-below` and this pins it against real evidence.
+  it("resolves a field above its label", async () => {
+    await page.goto(fixture("login"));
+    const binding: Binding = {
+      scope: [],
+      chain: [{ tier: 3, by: "anchor", anchorText: "Password", rel: "nearest-above", accepts: ["input"] }],
+    };
+    const res = await resolveBinding(page, binding, {});
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const name = await page.locator(`[data-dca-handle="${res.handle}"]`).getAttribute("name");
+    expect(name).toBe("username");
+  });
+
+  it("refuses to choose between two equidistant fields below an anchor", async () => {
+    await page.goto(synthetic("geometry"));
+    const binding: Binding = {
+      scope: [],
+      chain: [{ tier: 3, by: "anchor", anchorText: "Amount", rel: "nearest-below", accepts: ["input"] }],
+    };
+    // #below-tie-a and #below-tie-b share the same `top` and `left`, so neither
+    // the primary (vertical gap) nor the secondary (horizontal offset) ranking
+    // key breaks the tie.
+    expect(await resolveBinding(page, binding, {})).toMatchObject({
+      ok: false, reason: "ambiguous", tier: 3, count: 2,
+    });
+  });
+
+  // Pins the Task 1 fold-in for tier 3: `anchorResolve`'s own gate used to reject
+  // only zero-area elements, so a `visibility:hidden` control with a real box
+  // (browsers still lay it out, just don't paint it) survived resolution here
+  // while tiers 0-2 (via `filterRendered`) rejected the same shape of node. Now
+  // all four tiers route through the same `isRenderedIn` semantics.
+  it("does not resolve a visibility:hidden candidate at tier 3, even with real box area", async () => {
+    await page.goto(synthetic("geometry"));
+    const binding: Binding = {
+      scope: [],
+      chain: [{ tier: 3, by: "anchor", anchorText: "Hidden Field", rel: "nearest-right", accepts: ["input"] }],
+    };
+    const res = await resolveBinding(page, binding, {});
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toBe("no-match");
+  });
+
   // Frame and shadow descent belong with the observer in Phase 2. What must not
   // wait for Phase 2 is the guard: `scope` was accepted and ignored, so a
   // binding naming a frame that does not exist resolved against the top
