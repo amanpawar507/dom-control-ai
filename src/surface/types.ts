@@ -1,4 +1,5 @@
 import type { ActionType } from "../policy/allowlist.js";
+import type { Observation } from "../observe/snapshot.js";
 
 export type Handle = string;
 
@@ -9,25 +10,15 @@ export function scopeKey(path: ScopePath): string {
   return path.map((h) => `/${h.kind}:${h.name}`).join("");
 }
 
-export interface Box { x: number; y: number; w: number; h: number }
-
-export interface ObservedNode {
-  handle: Handle;
-  role: string;
-  name: string | null;
-  visible: boolean;
-  editable: boolean;
-  box: Box | null;
-  scope: ScopePath;
-  text: string | null;
-}
-
-export interface Observation {
-  url: string;
-  title: string;
-  nodes: ObservedNode[];
-  capturedAt: string;
-}
+// `ObservedNode`, `Observation` and `Box` were declared here as Phase 1
+// scaffolding, written before anything produced one. `src/observe/snapshot.ts`
+// now owns those names with a different shape, so the declarations are gone
+// and `Observation` is imported from there instead — `Surface.observe()` below
+// is a real consumer, not dead code.
+//
+// Two differently shaped interfaces sharing a name is a trap under structural
+// typing: an import from the wrong module can type-check while carrying the
+// wrong fields. One definition is the only version of this that stays true.
 
 export type Strategy =
   | { tier: 0; by: "testid"; value: string }
