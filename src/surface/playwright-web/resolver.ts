@@ -1,6 +1,14 @@
 // src/surface/playwright-web/resolver.ts
 import type { Locator, Page } from "playwright";
-import { scopeKey, type Binding, type Fingerprint, type Handle, type Resolution, type Strategy } from "../types.js";
+import {
+  scopeKey,
+  type Attempt,
+  type Binding,
+  type Fingerprint,
+  type Handle,
+  type Resolution,
+  type Strategy,
+} from "../types.js";
 import { filterRendered } from "../../observe/visibility.js";
 
 /** Every strategy the resolver can turn into a plain Playwright locator. */
@@ -234,6 +242,9 @@ export async function resolveBinding(
   }
 
   let sawAmbiguous: { tier: number; count: number } | null = null;
+  // Every rung tried before the one that wins, in order. The winning rung
+  // itself is never pushed here — it is reported through `tier`, not `attempts`.
+  const attempts: Attempt[] = [];
 
   for (const strategy of binding.chain) {
     // Tier 3 (`anchorResolve`) already filters for rendering as part of its own
@@ -246,9 +257,13 @@ export async function resolveBinding(
         ? await anchorResolve(page, strategy, args)
         : await filterRendered(await locatorFor(page, strategy, args).all());
 
-    if (matches.length === 0) continue;
+    if (matches.length === 0) {
+      attempts.push({ tier: strategy.tier, reason: "no-match" });
+      continue;
+    }
     if (matches.length > 1) {
       sawAmbiguous ??= { tier: strategy.tier, count: matches.length };
+      attempts.push({ tier: strategy.tier, reason: "ambiguous" });
       continue; // never pick one — try the next strategy
     }
 
@@ -259,7 +274,7 @@ export async function resolveBinding(
 
     // For an anchor match this is a no-op read: the element was already stamped
     // in-page, and read-before-write returns that same handle.
-    return { ok: true, tier: strategy.tier, handle: await stampHandle(only) };
+    return { ok: true, tier: strategy.tier, handle: await stampHandle(only), attempts };
   }
 
   if (sawAmbiguous) {

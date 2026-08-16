@@ -198,6 +198,39 @@ describe("resolveBinding", () => {
     expect(res.ok).toBe(false);
   });
 
+  // The brief's own version of these two tests targets an account-overview
+  // fixture (`#accountTable`) that is not among the captured fixtures in this
+  // repo — only findtrans/login/transfer exist under tests/fixtures/parabank/.
+  // Adapted to findtrans.html, keeping the brief's chain shapes (a testid that
+  // is nowhere on the page, then a css selector already proven unique by the
+  // "falls through an ambiguous strategy" test above) so the assertion is about
+  // `attempts`, not about which fixture happens to host it.
+  it("records the rungs that missed before the one that won", async () => {
+    await page.goto(fixture("findtrans"));
+    const res = await resolveBinding(page, {
+      scope: [],
+      chain: [
+        { tier: 0, by: "testid", value: "not-present-anywhere" },
+        { tier: 2, by: "css", value: "#findByAmount" },
+      ],
+    }, {});
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.tier).toBe(2);
+    expect(res.attempts).toEqual([{ tier: 0, reason: "no-match" }]);
+  });
+
+  it("reports an empty attempt list when the first rung wins", async () => {
+    await page.goto(fixture("findtrans"));
+    const res = await resolveBinding(page, {
+      scope: [],
+      chain: [{ tier: 1, by: "role", role: "link", name: "Accounts Overview" }],
+    }, {});
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.attempts).toEqual([]);
+  });
+
   it("substitutes $arg placeholders into strategy fields", async () => {
     await page.goto(fixture("findtrans"));
     const binding: Binding = {

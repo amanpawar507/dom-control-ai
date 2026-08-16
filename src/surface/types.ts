@@ -47,8 +47,21 @@ export interface Binding {
   fingerprint?: Fingerprint;
 }
 
+/**
+ * One rung of the chain that was tried and did not win, in the order it was
+ * tried. Phase 1 shipped a `Resolution` that reported only the winning tier, so
+ * "the chain fell through tier 0 and landed on tier 2" was inferable at best —
+ * nothing recorded that tier 0 was ever attempted. Task 6's record-time proving
+ * orders a chain by observed reliability and needs exactly this history; Phase 3
+ * drift detection wants it too.
+ */
+export interface Attempt {
+  tier: number;
+  reason: "no-match" | "ambiguous" | "fingerprint-mismatch";
+}
+
 export type Resolution =
-  | { ok: true; tier: number; handle: Handle }
+  | { ok: true; tier: number; handle: Handle; attempts: Attempt[] }
   | { ok: false; reason: "no-match" | "ambiguous" | "fingerprint-mismatch"; tier?: number; count?: number };
 
 export interface Action {
