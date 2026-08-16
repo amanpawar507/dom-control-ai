@@ -171,15 +171,31 @@ describe("resolveBinding", () => {
     await expect(resolveBinding(page, binding, {})).rejects.toThrow(/scope.*\/frame:no-such-frame/i);
   });
 
-  it("resolves that same chain when the binding declares no scope", async () => {
-    // The other half of the guard: it refuses what it cannot honour and nothing
-    // else. Without this, a resolver that threw on every binding would pass.
+  it("resolves an unscoped binding normally, rather than throwing for every binding", async () => {
+    // The other half of the guard: it refuses what it cannot honour (previous
+    // test) and nothing else. Without this, a resolver that threw on every
+    // binding would pass. Deliberately a different, visible target than the
+    // scope-guard test above: `#showResult h1` is the hidden success node
+    // exercised by the "rejects a hidden node" regression test below, and no
+    // longer resolves now that tiers 0-2 filter for rendering.
     await page.goto(fixture("transfer"));
     const binding: Binding = {
       scope: [],
-      chain: [{ tier: 2, by: "css", value: "#showResult h1" }],
+      chain: [{ tier: 2, by: "css", value: "#showForm h1" }],
     };
     expect(await resolveBinding(page, binding, {})).toMatchObject({ ok: true, tier: 2 });
+  });
+
+  it("rejects a hidden node at tier 2, matching tier 1's behaviour", async () => {
+    // Phase 1 shipped a ladder that disagreed with itself here: tier 1 rejected
+    // the hidden success node and tier 2 accepted it, fingerprint and all.
+    await page.goto(fixture("transfer"));
+    const res = await resolveBinding(
+      page,
+      { scope: [], chain: [{ tier: 2, by: "css", value: "#showResult h1" }] },
+      {},
+    );
+    expect(res.ok).toBe(false);
   });
 
   it("substitutes $arg placeholders into strategy fields", async () => {

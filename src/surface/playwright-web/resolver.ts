@@ -1,6 +1,7 @@
 // src/surface/playwright-web/resolver.ts
 import type { Locator, Page } from "playwright";
 import { scopeKey, type Binding, type Fingerprint, type Handle, type Resolution, type Strategy } from "../types.js";
+import { filterRendered } from "../../observe/visibility.js";
 
 /** Every strategy the resolver can turn into a plain Playwright locator. */
 type LocatableStrategy = Exclude<Strategy, { by: "anchor" }>;
@@ -235,10 +236,15 @@ export async function resolveBinding(
   let sawAmbiguous: { tier: number; count: number } | null = null;
 
   for (const strategy of binding.chain) {
+    // Tier 3 (`anchorResolve`) already filters for rendering as part of its own
+    // geometry pass. Tiers 0-2 filter here, in the same place their candidate
+    // list is otherwise finished — before the ambiguity/uniqueness check runs
+    // below — so a hidden node is rejected identically at every tier instead
+    // of surviving at some and not others. See `isRenderedIn`.
     const matches =
       strategy.by === "anchor"
         ? await anchorResolve(page, strategy, args)
-        : await locatorFor(page, strategy, args).all();
+        : await filterRendered(await locatorFor(page, strategy, args).all());
 
     if (matches.length === 0) continue;
     if (matches.length > 1) {
