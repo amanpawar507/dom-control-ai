@@ -60,10 +60,19 @@ export interface Binding {
  * nothing recorded that tier 0 was ever attempted. Task 6's record-time proving
  * orders a chain by observed reliability and needs exactly this history; Phase 3
  * drift detection wants it too.
+ *
+ * `reason` excludes `"fingerprint-mismatch"` deliberately. `resolveBinding`
+ * returns immediately on a mismatch rather than pushing it here and continuing
+ * the chain: the strategy resolved to something that is not what was recorded,
+ * which is evidence the surface changed, and trying further rungs risks acting
+ * on the wrong element. Failing loudly beats searching harder, so that outcome
+ * only ever surfaces as `Resolution`'s own `ok:false` reason — never as an
+ * `Attempt` — and the type says so instead of promising a state the resolver
+ * cannot reach.
  */
 export interface Attempt {
   tier: number;
-  reason: "no-match" | "ambiguous" | "fingerprint-mismatch";
+  reason: "no-match" | "ambiguous";
 }
 
 export type Resolution =
