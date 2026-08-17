@@ -267,7 +267,20 @@ class ArtifactRecorder {
    * moment of recording beats handing a caller an artifact that fails its own
    * schema the first time anyone reads it back off disk.
    */
-  finish(capability: { id: string; product: string; goal: string; tenant: string; variant: string }): CapabilityArtifact {
+  finish(capability: {
+    id: string;
+    product: string;
+    goal: string;
+    tenant: string;
+    variant: string;
+    /**
+     * Where the run started, captured before the first turn rather than read
+     * off the page at the end — by `finish` time the loop has navigated and
+     * `page.url()` is wherever it finished, which is not where a replay should
+     * begin.
+     */
+    entryUrl: string;
+  }): CapabilityArtifact {
     return parseArtifact({
       capability: {
         id: capability.id,
@@ -282,7 +295,12 @@ class ArtifactRecorder {
         status: "draft",
       },
       flow: { steps: this.steps },
-      bindings: { tenant: capability.tenant, variant: capability.variant, controls: this.controls },
+      bindings: {
+        tenant: capability.tenant,
+        variant: capability.variant,
+        entryUrl: capability.entryUrl,
+        controls: this.controls,
+      },
     });
   }
 
@@ -340,6 +358,13 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
   const startedAt = now();
 
   const recorder = new ArtifactRecorder();
+  /**
+   * Where this run began, read once before the first turn. It is what a replay
+   * must open to reproduce the run, and it has to be captured now: by the time
+   * an artifact is recorded the loop has navigated, and `page.url()` then is
+   * wherever the flow ended up, not where it started.
+   */
+  const entryUrl = page.url();
   /** The model's turns, and nothing else — see property 2 above. */
   const history: DriverTurn[] = [];
 
@@ -494,6 +519,7 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
           id: slug(goal) || "capability",
           product: opts.product ?? productFrom(observation.url),
           goal,
+          entryUrl,
           tenant: opts.tenant ?? "default",
           variant: opts.variant ?? "baseline",
         });

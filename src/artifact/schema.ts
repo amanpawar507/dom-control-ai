@@ -164,10 +164,34 @@ const FlowSchema = z
  * — so there is no field anywhere outside `bindings` a tenant-scoped value
  * could occupy, valid or not.
  */
+/**
+ * `entryUrl` lives here, in the per-tenant block, and that placement is the
+ * three-block model doing its job rather than an arbitrary choice.
+ *
+ * `capability` is the contract, shared across every tenant running the vendor
+ * product. `flow` is the logic, likewise shared. `bindings` is the surface —
+ * the part that differs per tenant and per variant. A starting URL is squarely
+ * surface: tenant A's install of the same product does not sit at tenant B's
+ * host. Putting it in `capability` or `flow` would make one tenant's hostname
+ * part of a contract every other tenant inherits, and the overlay invariant
+ * (§4: a tenant override may modify `bindings` only) would then be unable to
+ * correct it.
+ *
+ * It is required, not optional. An artifact that cannot say where it starts is
+ * not replayable standalone — something outside it has to know, and that
+ * knowledge has nowhere to live.
+ *
+ * Whether the URL is *permitted* is deliberately not checked here. The
+ * allowlist is policy, it is evaluated per run against the config in force,
+ * and the same artifact can be legal for one caller and refused for another.
+ * Baking that verdict into parse time would freeze a decision that belongs to
+ * the gate at replay.
+ */
 const BindingsSchema = z
   .object({
     tenant: z.string(),
     variant: z.string(),
+    entryUrl: z.string().url(),
     controls: z.record(z.string(), BindingSchema),
   })
   .strict();

@@ -33,6 +33,7 @@ const valid = {
   bindings: {
     tenant: "local",
     variant: "baseline",
+    entryUrl: "http://localhost:8081/parabank/index.htm",
     controls: {
       txn_id: { scope: [], chain: [{ tier: 2, by: "css", value: "#transactionId" }] },
       find_btn: { scope: [], chain: [{ tier: 2, by: "css", value: "#find_btn" }] },
@@ -54,6 +55,27 @@ describe("artifact schema", () => {
     const broken = structuredClone(valid);
     broken.flow.steps.push({ kind: "act", action: "click", control: "ghost_control" });
     expect(() => parseArtifact(broken)).toThrow(/ghost_control/);
+  });
+
+  it("rejects an artifact that cannot say where it starts", () => {
+    // An artifact with no entry URL is not replayable standalone: something
+    // outside it has to know which page to open, and that knowledge has
+    // nowhere to live. Required rather than optional for that reason.
+    const broken = structuredClone(valid) as Record<string, any>;
+    delete broken["bindings"].entryUrl;
+    expect(() => parseArtifact(broken)).toThrow();
+  });
+
+  it("keeps the entry URL in the per-tenant block, where an overlay can correct it", () => {
+    // Placement is load-bearing, not cosmetic. `capability` and `flow` are
+    // shared across every tenant running the vendor product; `bindings` is the
+    // per-tenant surface. Tenant A's install does not sit at tenant B's host,
+    // so a starting URL in `capability` would make one tenant's hostname part
+    // of a contract the others inherit — and the overlay invariant (a tenant
+    // override may modify `bindings` only) would leave them unable to fix it.
+    const parsed = parseArtifact(structuredClone(valid));
+    expect(parsed.bindings.entryUrl).toBe("http://localhost:8081/parabank/index.htm");
+    expect(parsed.capability).not.toHaveProperty("entryUrl");
   });
 
   it("rejects status outside the declared lifecycle", () => {
