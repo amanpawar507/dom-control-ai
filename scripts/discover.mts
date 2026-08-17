@@ -1,0 +1,249 @@
+// The one entry point in this project that spends money.
+//
+//   npm run discover -- --goal "..." --max-steps 12 --budget 1.00
+//
+// It is a script and not a test on purpose: `npm test` must stay
+// container-free and free of network calls, and a suite that called a paid
+// API would cost money every time anyone ran it and would fail whenever a
+// third party was down. The single exchange this script performs is captured
+// by `recordCassette` into a replayable artifact, so the wire shape it proves
+// is guarded from then on at no cost (src/discover/cassette.ts).
+//
+// It never touches ParaBank's admin console. `Clean` and `Shutdown` there drop
+// the fixture database every later phase depends on; the policy below
+// classifies them irreversible so the gate escalates rather than clicking, and
+// the run finishes by re-reading the seed account to show the database is
+// still the one every other test expects.
+import { parseArgs } from "node:util";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { chromium } from "playwright";
+import { AnthropicDriver, DISCOVERY_MODEL } from "../src/discover/anthropic.js";
+import { Budget, BudgetExceeded } from "../src/discover/budget.js";
+import { recordCassette } from "../src/discover/cassette.js";
+import { discover } from "../src/discover/loop.js";
+import { RunLogger } from "../src/evidence/logger.js";
+import type { PolicyConfig } from "../src/policy/gate.js";
+import { ParabankSessionProvider } from "../src/session/playwright-state.js";
+
+const { values } = parseArgs({
+  options: {
+    goal: { type: "string" },
+    "max-steps": { type: "string", default: "12" },
+    budget: { type: "string", default: "1.00" },
+    model: { type: "string", default: DISCOVERY_MODEL },
+    base: { type: "string", default: "http://localhost:8081/parabank" },
+    entry: { type: "string" },
+    cassette: { type: "string", default: "tests/cassettes/parabank-account-activity.json" },
+  },
+});
+
+if (values.goal === undefined || values.goal.trim() === "") {
+  throw new Error("--goal is required: this run drives a model, and a model with no goal spends money for nothing");
+}
+
+/**
+ * Passed in, never defaulted. The client would happily read the environment
+ * itself, but then a run with no key configured would fail somewhere inside
+ * the SDK instead of here, and `AnthropicDriver` could not promise that the
+ * key reaches it from exactly one place.
+ */
+const apiKey = process.env["ANTHROPIC_API_KEY"] ?? "";
+if (apiKey.trim() === "") {
+  throw new Error("ANTHROPIC_API_KEY is not set (put it in .env — `npm run discover` loads that file)");
+}
+
+const BASE = values.base;
+const GOAL = values.goal;
+const MAX_STEPS = Number(values["max-steps"]);
+const CEILING_USD = Number(values.budget);
+const ENTRY = values.entry ?? `${BASE}/overview.htm`;
+
+if (!Number.isFinite(MAX_STEPS) || MAX_STEPS <= 0) throw new Error(`--max-steps must be a positive number`);
+if (!Number.isFinite(CEILING_USD) || CEILING_USD <= 0) throw new Error(`--budget must be a positive number of dollars`);
+
+/**
+ * Claude Sonnet 5 introductory pricing, in effect through 2026-08-31. It is a
+ * constructor argument to `Budget` rather than a constant inside it precisely
+ * so this line is the only thing that changes when the rate does.
+ */
+const RATE = { inPerM: 2, outPerM: 10 } as const;
+
+/** Pinned for the same reason Phase 1 pinned it: tier 3 compares rendered rectangles. */
+const VIEWPORT = { width: 1280, height: 800 } as const;
+
+/**
+ * What the model is allowed to do, and what it is stopped from doing.
+ *
+ * `approved: false` is the load-bearing half of the risk rules below: a
+ * `guarded` control is refused outright unless the capability has already been
+ * approved by a human, and nothing recorded by discovery has been. So the
+ * money-moving controls ParaBank puts in the navigation of every authenticated
+ * page — Transfer Funds, Bill Pay, Request Loan, Open New Account — are
+ * refused if the model wanders onto one, and the run ends rather than
+ * transferring fixture money about.
+ *
+ * `Clean` and `Shutdown` are `irreversible` and escalate instead: they drop
+ * the fixture database, which is not a thing to merely refuse quietly.
+ * `Admin Page` is in the same class because it is the door to both and is
+ * linked from every page on the site.
+ */
+const POLICY: PolicyConfig = {
+  allowlist: {
+    origins: ["http://localhost:8081"],
+    paths: ["/parabank/**"],
+    actions: ["click", "fill", "select", "navigate", "extract"],
+  },
+  riskRules: [
+    { tier: "irreversible", matchControl: "^(Clean|Shutdown|Admin Page)$" },
+    {
+      tier: "guarded",
+      matchControl: "^(Transfer Funds|Bill Pay|Request Loan|Open New Account|Update Contact Info|Log Out)$",
+    },
+  ],
+  sensitiveControls: ["Password:", "SSN:"],
+  approved: false,
+};
+
+/**
+ * The allowlist as the model is told it, which is deliberately not the same
+ * object the gate enforces. The gate is the authority; this is a sentence in
+ * a prompt. Deriving the sentence from the config keeps the two from drifting
+ * into saying different things, while leaving no doubt about which one decides.
+ */
+const ALLOWLIST_FOR_PROMPT = POLICY.allowlist.origins.flatMap((origin) =>
+  POLICY.allowlist.paths.map((path) => `${origin}${path}`),
+);
+
+const runId = `discover-${Date.now()}`;
+const log = new RunLogger(runId);
+
+/**
+ * Capabilities never authenticate (spec §5). The provider is the only module
+ * that ever sees a credential; what comes back is a storage state — a session
+ * cookie and nothing else — and that is what the browser this run drives is
+ * built from. The discovery loop therefore starts already logged in, and no
+ * password is ever typed by the model, put in a prompt, or written to the
+ * cassette.
+ */
+const session = await new ParabankSessionProvider(BASE).acquire("parabank", "local");
+
+const browser = await chromium.launch();
+const context = await browser.newContext({
+  viewport: VIEWPORT,
+  storageState: JSON.parse(session.storageState),
+});
+const page = await context.newPage();
+await page.goto(ENTRY);
+// A condition with an explicit budget, never a sleep. ParaBank fills the
+// accounts table after load, and the first observation is taken before the
+// loop's own settle ever runs — without this the model's first snapshot would
+// be missing every account link on the page it starts from.
+await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
+
+/**
+ * Two `Budget` objects, one ceiling.
+ *
+ * They cannot be the same object: `AnthropicDriver` charges from each
+ * response's usage before returning a turn, and `discover()` charges the delta
+ * of `driver.usage()` after it — one shared instance would bill every turn
+ * twice, binding at half the stated ceiling and reporting double the spend.
+ * Two instances at the same limit are each charged exactly once from the same
+ * token counts, so they must agree at the end; the check below is what makes
+ * that "must" observable rather than assumed.
+ */
+const driverBudget = new Budget(CEILING_USD, RATE);
+const loopBudget = new Budget(CEILING_USD, RATE);
+
+const live = new AnthropicDriver({
+  apiKey,
+  model: values.model,
+  budget: driverBudget,
+  goal: GOAL,
+  allowlist: ALLOWLIST_FOR_PROMPT,
+});
+
+mkdirSync(dirname(values.cassette), { recursive: true });
+/**
+ * Every exchange this run pays for is written to disk as it happens, so a
+ * single expenditure becomes a permanent replayable fixture rather than a
+ * one-off. The recorder scrubs `fill`/`select` values structurally and runs
+ * `redactDeep` over the whole record before writing (src/discover/cassette.ts).
+ */
+const driver = recordCassette(values.cassette, live);
+
+console.log(`goal:      ${GOAL}`);
+console.log(`model:     ${values.model}`);
+console.log(`entry:     ${ENTRY}`);
+console.log(`ceiling:   $${CEILING_USD.toFixed(2)} at $${RATE.inPerM}/1M in, $${RATE.outPerM}/1M out`);
+console.log(`max steps: ${MAX_STEPS}`);
+console.log(`cassette:  ${values.cassette}`);
+console.log(`evidence:  ${log.path()}`);
+console.log("");
+
+let result: Awaited<ReturnType<typeof discover>> | null = null;
+let failure: unknown = null;
+try {
+  result = await discover({
+    page,
+    goal: GOAL,
+    driver,
+    policy: POLICY,
+    log,
+    budget: loopBudget,
+    maxSteps: MAX_STEPS,
+    product: "parabank",
+    tenant: "local",
+    variant: "baseline",
+  });
+} catch (thrown) {
+  // Reported rather than rethrown here, so that the accounting below always
+  // runs: a run that died still spent money, and the number it spent is the
+  // one thing that must not be lost with the stack trace.
+  failure = thrown;
+}
+
+const used = driver.usage();
+console.log("--- usage as the API reported it ---");
+console.log(`input tokens:  ${used.inputTokens}`);
+console.log(`output tokens: ${used.outputTokens}`);
+console.log(`spend (driver's budget): $${driverBudget.spentUsd().toFixed(6)}`);
+console.log(`spend (loop's budget):   $${loopBudget.spentUsd().toFixed(6)}`);
+if (Math.abs(driverBudget.spentUsd() - loopBudget.spentUsd()) > 1e-9) {
+  console.log("WARNING: the two budgets disagree — one of them is not being charged from the same usage");
+}
+
+if (failure !== null) {
+  console.log("");
+  console.log(
+    failure instanceof BudgetExceeded
+      ? `--- halted: the ceiling was reached --- ${failure.message}`
+      : `--- halted: ${(failure as Error).name}: ${(failure as Error).message}`,
+  );
+} else if (result !== null) {
+  console.log("");
+  if (result.status === "recorded") {
+    const artifactPath = join(dirname(log.path()), "artifact.json");
+    writeFileSync(artifactPath, `${JSON.stringify(result.artifact, null, 2)}\n`, "utf8");
+    console.log(`--- recorded a capability in ${result.steps} step(s) --- ${artifactPath}`);
+    console.log(JSON.stringify(result.artifact, null, 2));
+  } else {
+    console.log(`--- escalated after ${result.steps} step(s): ${result.reason} ---`);
+  }
+}
+
+// The fixture database every later phase depends on. Checked here rather than
+// asserted about in prose: a run that had reached `Clean` would leave this
+// account gone or reset, so reading the exact seeded value back is what makes
+// "we never went near admin" falsifiable.
+const seed = await fetch(`${BASE}/services/bank/accounts/12345`).then((r) => r.text());
+console.log("");
+console.log(
+  seed.includes("<balance>-2300.00</balance>")
+    ? "seed account 12345: intact (-2300.00)"
+    : `seed account 12345: CHANGED — ${seed.slice(0, 200)}`,
+);
+
+await browser.close();
+
+if (failure !== null) throw failure;
