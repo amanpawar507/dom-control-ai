@@ -172,4 +172,79 @@ describe("proveControl", () => {
     const wrongRole: ObservedNode = { ...adminLink, role: "button" };
     await expect(proveControl(page, wrongRole)).rejects.toThrow(/unique/i);
   });
+
+  it("records a fingerprint, so resolution rule 3 is something the artifact carries", () => {
+    // Without this, every binding this phase produces skips the fingerprint
+    // check at replay and spec §7's third resolution rule — "fingerprint and
+    // stability must both hold" — holds because nothing tests it.
+    return (async () => {
+      await page.goto(fixture("login"));
+      const obs = await observe(page);
+      const input = obs.nodes.find((n) => n.editable)!;
+      const binding = await proveControl(page, input);
+      expect(binding.fingerprint?.tag).toBe("input");
+    })();
+  });
+
+  it("records no `matches`, because inferring one from a single sample is how phase 1 broke", () => {
+    // A format class guessed from one observed value is always consistent with
+    // that value, so it looks right at record time and fails later on the first
+    // legitimate variation. Phase 1 shipped exactly that: an inferred currency
+    // fingerprint that rejected negative balances, reporting a valid overdrawn
+    // account as a resolution failure. The recorder does not guess.
+    return (async () => {
+      await page.goto(fixture("login"));
+      const obs = await observe(page);
+      const input = obs.nodes.find((n) => n.editable)!;
+      const binding = await proveControl(page, input);
+      expect(binding.fingerprint?.matches).toBeUndefined();
+    })();
+  });
+
+  it("the recorded fingerprint actually binds, on the one tier that needs it", () => {
+    // Where a `tag` fingerprint earns its place is narrower than it first
+    // looks, and worth stating precisely.
+    //
+    // Every tier except 0 already encodes the element type in its targeting:
+    // the css candidates are tag-based (`input`, `input.foo`,
+    // `input[name=x]`), the anchor strategy carries `accepts: [tag]`, and a
+    // role is derived from the tag. If the element type changes, those
+    // strategies stop matching and resolution fails as `no-match` before any
+    // fingerprint is consulted.
+    //
+    // Tier 0 is the exception, and it is the tier the ladder prefers most:
+    // `[data-testid="x"]` matches whatever element carries the attribute,
+    // whatever it is. So a test id that survives onto a structurally different
+    // element resolves cleanly and would be acted on — and the fingerprint is
+    // the only thing standing between that and a click on the wrong kind of
+    // control. ParaBank's fixtures carry no test ids at all, so this case
+    // needs an authored page.
+    return (async () => {
+      const scratch = await browser.newPage();
+      try {
+        await scratch.setContent(`<input data-testid="amount" name="amount" value="10">`);
+        const obs = await observe(scratch);
+        const node = obs.nodes.find((n) => n.editable)!;
+        const binding = await proveControl(scratch, node);
+
+        expect(binding.chain[0]).toMatchObject({ tier: 0, by: "testid" });
+        expect(binding.fingerprint?.tag).toBe("input");
+
+        // The test id survives onto a div. Tier 0 still resolves to exactly
+        // one element, so only the fingerprint can refuse it.
+        await scratch.setContent(`<div data-testid="amount">10</div>`);
+        const res = await resolveBinding(scratch, { ...binding, chain: [binding.chain[0]!] }, {});
+        expect(res.ok).toBe(false);
+        if (res.ok) return;
+        expect(res.reason).toBe("fingerprint-mismatch");
+
+        // And without the fingerprint that same swap resolves happily — which
+        // is what makes the assertion above load-bearing rather than incidental.
+        const unguarded = await resolveBinding(scratch, { scope: [], chain: [binding.chain[0]!] }, {});
+        expect(unguarded.ok).toBe(true);
+      } finally {
+        await scratch.close();
+      }
+    })();
+  });
 });

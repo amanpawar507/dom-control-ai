@@ -350,5 +350,23 @@ export async function proveControl(page: Page, node: ObservedNode): Promise<Bind
   const RANK: Record<0 | 1 | 2 | 3, number> = { 0: 0, 3: 1, 1: 2, 2: 3 };
   survivors.sort((a, b) => RANK[a.tier] - RANK[b.tier]);
 
-  return { scope: [], chain: survivors };
+  // Record a fingerprint so resolution rule 3 — "fingerprint and stability
+  // must both hold" — is something an artifact actually carries rather than a
+  // rule that holds because nothing tests it. Without this every binding this
+  // phase produces skips the check entirely at replay.
+  //
+  // `tag` only, deliberately. A fingerprint answers "is this the kind of thing
+  // I recorded" — it catches a binding that now resolves to a `div` where it
+  // recorded an `input`, which is the structural drift worth catching. It is
+  // NOT a record-identity check and NOT a business-range assertion.
+  //
+  // `matches` is left unset rather than inferred from the element's current
+  // text. Phase 1 shipped an inferred currency fingerprint that rejected
+  // negative balances, so a legitimately overdrawn account was reported as a
+  // resolution failure and an operator was sent to debug a targeting problem
+  // that did not exist. Guessing a format class from one observed value
+  // reproduces that defect by construction: the one sample is always
+  // consistent with itself. A caller who knows the format can set `matches`
+  // deliberately; the recorder will not invent one.
+  return { scope: [], chain: survivors, fingerprint: { tag: facts.tag } };
 }
