@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "note": "HAND-AUTHORED FIXTURE for Task 11 (Phase 2). This file is NOT a captured recording of any real Anthropic exchange — no live API call was made to produce it, and no browser session it describes ever existed. It exists only to exercise CassetteDriver's replay and mismatch-detection logic at zero cost. The real recording arrives in Task 12, under a different filename, so a captured cassette and this authored fixture can never be confused for one another (mirrors tests/fixtures/parabank/ vs tests/fixtures/synthetic/ from Phase 1).",
+  "turns": [
+    {
+      "observation": {
+        "url": "https://example.test/synthetic/login",
+        "title": "Synthetic Login — DCA Fixture",
+        "nodes": [
+          { "role": "textbox", "name": "Sample Account Handle", "editable": true },
+          { "role": "textbox", "name": "Sample Passphrase", "editable": true },
+          { "role": "button", "name": "Enter Sample Vault", "editable": false }
+        ]
+      },
+      "response": {
+        "calls": [
+          { "name": "click", "input": { "handle": "o1n2" } }
+        ]
+      },
+      "usage": { "inputTokens": 245, "outputTokens": 18 }
+    }
+  ]
+}
