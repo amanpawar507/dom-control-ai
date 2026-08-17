@@ -90,7 +90,35 @@ function substitute(input: unknown, observation: Observation): unknown {
   );
 }
 
+/**
+ * Resolve `@Name` to the handle of the single node with that accessible name.
+ *
+ * Requiring exactly one match is the point: a script that silently addressed
+ * the first of several would let a test pass while acting on an element nobody
+ * chose, which is the failure this whole project is built to prevent.
+ *
+ * `@2:Name` is a deliberate escape hatch for the one case that needs it —
+ * a test *about* an element that is ambiguous by name, where the ambiguity is
+ * the subject rather than an accident. It is 1-based, and it still fails if the
+ * index does not exist, so it cannot silently drift onto a different element
+ * either. Prefer the bare form everywhere else; reaching for the index when a
+ * unique name is available is how a script stops describing what it means.
+ */
 function handleFor(observation: Observation, name: string): string {
+  const indexed = /^(\d+):(.*)$/.exec(name);
+  if (indexed !== null) {
+    const wanted = Number(indexed[1]);
+    const bare = indexed[2]!;
+    const matches = observation.nodes.filter((n) => n.name === bare);
+    const picked = matches[wanted - 1];
+    if (picked === undefined) {
+      throw new DriverFault(
+        `script names "${bare}" at index ${wanted}, but only ${matches.length} node(s) carry that name`,
+      );
+    }
+    return picked.handle;
+  }
+
   const matches = observation.nodes.filter((n) => n.name === name);
   if (matches.length !== 1) {
     throw new DriverFault(

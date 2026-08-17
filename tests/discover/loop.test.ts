@@ -69,6 +69,19 @@ const PAGES: Record<string, string> = {
   <button data-testid="hide-banner" onclick="document.getElementById('banner').style.visibility='hidden'">Hide Banner</button>
   <button data-testid="remove-banner" onclick="document.getElementById('banner').remove()">Remove Banner</button>
 </body></html>`,
+  // Deliberately carries no `data-testid` and four identically-named buttons,
+  // the shape ParaBank's own findtrans page has. Every other page here is
+  // marked up so proving always succeeds, which is why `control-unprovable`
+  // had no scenario until this one existed.
+  "/parabank/ambiguous.htm": `<!doctype html>
+<html><head><title>ParaBank | Find</title></head>
+<body>
+  <a href="/parabank/index.htm" data-testid="nav-home">Home</a>
+  <button>Find Transactions</button>
+  <button>Find Transactions</button>
+  <button>Find Transactions</button>
+  <button>Find Transactions</button>
+</body></html>`,
 };
 
 const CFG: PolicyConfig = {
@@ -520,6 +533,21 @@ describe("discover — never a partial artifact", () => {
   // a happy-path negation never visits.
   const scenarios: Array<[StopReason, () => Overrides]> = [
     [
+      // `done` naming one of four identically-named buttons on a page with no
+      // test ids: every candidate strategy resolves ambiguously, so
+      // `proveControl` throws rather than emit a binding that would resolve to
+      // an arbitrary one of them at replay. The run must escalate and record
+      // nothing — a checkpoint that cannot be proven is not a checkpoint,
+      // however confidently the model asserted `done`.
+      "control-unprovable",
+      () => ({
+        driver: new HandleScript([
+          [{ name: "navigate", input: { url: `${ORIGIN}/parabank/ambiguous.htm` } }],
+          [{ name: "done", input: { checkpoint: "@2:Find Transactions" } }],
+        ]),
+      }),
+    ],
+    [
       "max-steps",
       () => ({
         driver: new HandleScript([
@@ -631,6 +659,6 @@ describe("discover — never a partial artifact", () => {
       "model-output-unusable",
       "control-unprovable",
     ];
-    expect(all.filter((r) => !covered.has(r))).toEqual(["control-unprovable"]);
+    expect(all.filter((r) => !covered.has(r))).toEqual([]);
   });
 });
