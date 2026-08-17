@@ -139,12 +139,18 @@ describe("discovery against the live ParaBank target", () => {
     // And each one resolves, right now, on the page the run finished on —
     // which is what "replayable with no model in the loop" has to mean.
     for (const [name, binding] of Object.entries(controls)) {
-      // Discovery emits no fingerprint in this phase, and that is asserted
-      // rather than assumed — a fingerprint is a recorded expectation about
-      // the *shape of a value* (§7), and nothing in the loop is yet in a
-      // position to know one. Stating it here is what will make it visible
-      // when that changes, instead of a rebuilt object silently dropping it.
-      expect(binding.fingerprint, `${name} carries a fingerprint discovery cannot have proven`).toBeUndefined();
+      // Discovery records a `tag` fingerprint and deliberately nothing else,
+      // so spec §7's third resolution rule — "fingerprint and stability must
+      // both hold" — is something the artifact actually carries rather than a
+      // rule that holds because no artifact ever tested it. `matches` stays
+      // absent on purpose: a format class inferred from one observed value is
+      // always consistent with that value, looks right at record time, and
+      // fails on the first legitimate variation (Phase 1 shipped exactly that
+      // — an inferred currency fingerprint that rejected negative balances).
+      // Both halves are asserted, so neither a dropped fingerprint nor a
+      // guessed one can arrive unnoticed.
+      expect(binding.fingerprint?.tag, `${name} carries no fingerprint`).toBeTruthy();
+      expect(binding.fingerprint?.matches, `${name} carries a value shape discovery cannot have proven`).toBeUndefined();
       const probe: Binding = { scope: binding.scope, chain: binding.chain };
       const res = await resolveBinding(page, probe, {});
       expect(res.ok, `${name} did not resolve: ${JSON.stringify(res)}`).toBe(true);
