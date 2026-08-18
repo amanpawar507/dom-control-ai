@@ -4,8 +4,9 @@ import { chromium, type Browser, type Page } from "playwright";
 import { pathToFileURL } from "node:url";
 import { resolve as resolvePath } from "node:path";
 import { proveControl } from "../../src/artifact/prove.js";
-import { observe, type ObservedNode } from "../../src/observe/snapshot.js";
-import { resolveBinding } from "../../src/surface/playwright-web/resolver.js";
+import { observe, OBS_ATTR, type ObservedNode } from "../../src/observe/snapshot.js";
+import { HANDLE_ATTR, resolveBinding } from "../../src/surface/playwright-web/resolver.js";
+import type { Strategy } from "../../src/surface/types.js";
 
 let browser: Browser;
 let page: Page;
@@ -20,8 +21,26 @@ afterAll(async () => {
   await browser.close();
 });
 
+/**
+ * The observation handle of whatever element this strategy resolves to, or
+ * `null` if it does not resolve to exactly one, or resolves to something
+ * `observe()` never stamped.
+ *
+ * This is the assertion the whole file exists to make and the one it used to
+ * skip. `expect(res.ok).toBe(true)` says "exactly one element matches";
+ * `expect(landedOn(s)).toBe(node.handle)` says "and it is the element the
+ * model touched". Only the second one means anything for replay — a strategy
+ * that resolves uniquely to the *wrong* control is precisely the artifact
+ * that looks correct in every respect and clicks something else.
+ */
+async function landedOn(p: Page, strategy: Strategy): Promise<string | null> {
+  const res = await resolveBinding(p, { scope: [], chain: [strategy] }, {});
+  if (!res.ok) return null;
+  return p.locator(`[${HANDLE_ATTR}="${res.handle}"]`).evaluate((el, attr) => el.getAttribute(attr), OBS_ATTR);
+}
+
 describe("proveControl", () => {
-  it("produces a chain whose every rung was proven unique on this page", async () => {
+  it("produces a chain whose every rung resolves, uniquely, to the element it was proven for", async () => {
     await page.goto(fixture("findtrans"));
     const obs = await observe(page);
     const node = obs.nodes.find((n) => n.editable)!;
@@ -31,6 +50,9 @@ describe("proveControl", () => {
     for (const strategy of binding.chain) {
       const res = await resolveBinding(page, { scope: [], chain: [strategy] }, {});
       expect(res.ok, `tier ${strategy.tier} did not resolve uniquely`).toBe(true);
+      expect(await landedOn(page, strategy), `tier ${strategy.tier} resolved to a different element`).toBe(
+        node.handle,
+      );
     }
   });
 
@@ -247,4 +269,100 @@ describe("proveControl", () => {
       }
     })();
   });
+
+  // The two vectors below are the same defect seen from two tiers: a
+  // candidate that resolves to exactly one element, which is not this
+  // element. Uniqueness held in both; identity did not. Neither was caught by
+  // anything in this file, because every assertion here used to stop at
+  // `res.ok`.
+  //
+  // Both are written as "the chain contains no rung of tier N, and every rung
+  // it does contain lands on the target". The second clause is what keeps the
+  // first honest: a `proveControl` that generated no candidates at all would
+  // satisfy "no tier-N rung" for the wrong reason, and the positive assertion
+  // that some other rung *did* prove rules that out.
+
+  it("rejects a role rung that resolves uniquely to a different element (the aria-hidden twin)", async () => {
+    // `walk` has no `aria-hidden` clause and Playwright's accessible-name
+    // computation does, so the two disagree about what exists. The ghost is
+    // observed as {role:"button", name:"Save"} and handed to the model;
+    // `getByRole("button",{name:"Save",exact:true})` skips it and matches only
+    // the real button — exactly one element, and the wrong one. Both are
+    // `<button>`, so the recorded `tag` fingerprint passes too.
+    const scratch = await browser.newPage();
+    try {
+      await scratch.setContent(
+        `<button aria-hidden="true" class="ghost">Save</button><button id="real">Save</button>`,
+      );
+      const obs = await observe(scratch);
+      const ghost = obs.nodes.find((n) => n.name === "Save")!;
+      // Both buttons are observed, and the ghost is the first of them — that
+      // divergence is the premise of the whole test.
+      expect(obs.nodes.filter((n) => n.name === "Save")).toHaveLength(2);
+
+      // The premise, stated as a fact about the page rather than assumed: the
+      // tier-1 candidate generated from the ghost resolves, uniquely, to the
+      // real button.
+      const roleRung: Strategy = { tier: 1, by: "role", role: "button", name: "Save" };
+      const realHandle = obs.nodes.filter((n) => n.name === "Save")[1]!.handle;
+      expect(await landedOn(scratch, roleRung)).toBe(realHandle);
+      expect(realHandle).not.toBe(ghost.handle);
+
+      const binding = await proveControl(scratch, ghost);
+      expect(binding.chain.some((s) => s.by === "role")).toBe(false);
+      expect(binding.chain.length).toBeGreaterThan(0);
+      for (const strategy of binding.chain) {
+        expect(await landedOn(scratch, strategy), `tier ${strategy.tier} left the target`).toBe(ghost.handle);
+      }
+    } finally {
+      await scratch.close();
+    }
+  });
+
+  it("rejects an anchor rung the target merely qualifies for while a nearer element wins it", async () => {
+    // `readProvingFacts` checks that the target qualifies for a relation;
+    // `anchorResolve` returns the *nearest* qualifier. Qualifying is not
+    // winning. And `accepts: [facts.tag]` guarantees the element that does win
+    // shares the target's tag, so the `tag` fingerprint — the only fingerprint
+    // discovery records — cannot catch this one by construction.
+    const scratch = await browser.newPage();
+    try {
+      await scratch.setViewportSize({ width: 1280, height: 800 });
+      await scratch.setContent(`<div style="position:relative;height:60px">
+  <span style="position:absolute;left:0px;top:10px">Amount:</span>
+  <input id="target" name="target" style="position:absolute;left:300px;top:10px;width:50px;height:20px">
+  <input id="decoy" name="decoy" style="position:absolute;left:120px;top:10px;width:50px;height:20px">
+</div>`);
+      const obs = await observe(scratch);
+      const targetHandle = await handleOf(scratch, "#target");
+      const decoyHandle = await handleOf(scratch, "#decoy");
+      const target = obs.nodes.find((n) => n.handle === targetHandle)!;
+
+      // The premise: the anchor rung the generator would produce for #target
+      // resolves uniquely — to #decoy.
+      const anchorRung: Strategy = {
+        tier: 3,
+        by: "anchor",
+        anchorText: "Amount:",
+        rel: "nearest-right",
+        accepts: ["input"],
+      };
+      expect(await landedOn(scratch, anchorRung)).toBe(decoyHandle);
+      expect(decoyHandle).not.toBe(target.handle);
+
+      const binding = await proveControl(scratch, target);
+      expect(binding.chain.some((s) => s.by === "anchor")).toBe(false);
+      expect(binding.chain.length).toBeGreaterThan(0);
+      for (const strategy of binding.chain) {
+        expect(await landedOn(scratch, strategy), `tier ${strategy.tier} left the target`).toBe(target.handle);
+      }
+    } finally {
+      await scratch.close();
+    }
+  });
 });
+
+/** The observation handle `observe()` stamped on the element this selector names. */
+async function handleOf(p: Page, selector: string): Promise<string | null> {
+  return p.locator(selector).evaluate((el, attr) => el.getAttribute(attr), OBS_ATTR);
+}

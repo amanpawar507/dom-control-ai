@@ -1,15 +1,19 @@
 // src/artifact/prove.ts
 import type { Page } from "playwright";
 import { OBS_ATTR, type ObservedNode } from "../observe/snapshot.js";
-import { resolveBinding } from "../surface/playwright-web/resolver.js";
+import { HANDLE_ATTR, resolveBinding } from "../surface/playwright-web/resolver.js";
 import type { Binding, Strategy } from "../surface/types.js";
 
 /**
  * Record-time proving: turn a handle the model touched during discovery into
  * a `Binding` every rung of which was actually confirmed, live, to resolve
- * to exactly one element on THIS page, right now. That confirmation is the
- * whole point — a chain built from a plausible guess and never checked is a
- * hope, not a binding. See `proveControl` below for the entry point.
+ * to exactly one element on THIS page, right now — **and to resolve to the
+ * element the model actually touched**, not merely to some single element.
+ * That second half is the whole point, and it is the half this file shipped
+ * without: a chain built from a plausible guess and never checked is a hope,
+ * not a binding, and a chain checked only for uniqueness is a binding to
+ * whatever happened to be unique. See `proveControl` below for the entry
+ * point and `resolvesToTarget` for the check.
  *
  * `proveControl` takes the whole `ObservedNode` `observe()` produced for the
  * touched element, not a bare handle string. `node.handle` is the
@@ -230,18 +234,52 @@ function buildCssCandidates(facts: RawFacts): string[] {
 }
 
 /**
- * Tests one strategy in isolation — the same shape of call
- * `tests/artifact/prove.test.ts` uses to re-check every rung of the
- * returned chain. A strategy survives only if it resolves `ok: true` here;
- * anything else (no match, ambiguous, or a thrown error from a malformed
- * guess such as an invalid role string) is treated as "does not prove
- * unique" rather than propagated, because a bad guess must not abort the
- * search for a good one.
+ * Tests one strategy in isolation and answers the only question worth
+ * answering: does this strategy resolve to exactly one element, **and is
+ * that element the one the model touched**?
+ *
+ * The uniqueness half alone — which is all this function used to check — is
+ * true and useless. "Exactly one element on this page matches this
+ * strategy" and "that element is the control the model acted on" are
+ * different statements, and only the second is what replay needs. Two
+ * concrete ways the first can hold while the second fails, both demonstrated
+ * against live markup:
+ *
+ *  - **Tier 1.** `walk`'s role/name heuristic (`observe/snapshot.ts`) and
+ *    Playwright's accessible-name computation are two different functions.
+ *    An `aria-hidden="true"` button named "Save" beside a real one is
+ *    observed by `walk` (which has no `aria-hidden` clause) and excluded by
+ *    `getByRole` (which does) — so the strategy generated *from the ghost*
+ *    resolves, uniquely, to the real button. Both are `<button>`, so a `tag`
+ *    fingerprint waves it through.
+ *  - **Tier 3.** `readProvingFacts` above checks that the target *qualifies*
+ *    for a relation; `anchorResolve` returns the *nearest* qualifier.
+ *    Qualifying is not winning: a nearer same-tag element takes the match,
+ *    and `accepts: [facts.tag]` guarantees the wrong element shares the
+ *    target's tag, so the `tag` fingerprint can never catch this one.
+ *
+ * The comparison is by observation handle, not by locator equality. The
+ * target carries `OBS_ATTR` (stamped by `observe()`, unique on the page —
+ * `proveControl` checks that first), and `resolveBinding` reports the
+ * `HANDLE_ATTR` stamp of whatever it landed on, so reading `OBS_ATTR` back
+ * off that element and comparing strings is an identity test with no second
+ * notion of "the same element" to get wrong.
+ *
+ * Everything failing — no match, ambiguous, a thrown error from a malformed
+ * guess such as an invalid role string, a `HANDLE_ATTR` selector that
+ * matches more than one element because the page cloned a stamped node — is
+ * treated as "did not prove" rather than propagated. A bad guess must not
+ * abort the search for a good one, and every one of those outcomes fails
+ * closed: the candidate is rejected, never recorded.
  */
-async function provesUnique(page: Page, strategy: Strategy): Promise<boolean> {
+async function resolvesToTarget(page: Page, strategy: Strategy, obsHandle: string): Promise<boolean> {
   try {
     const res = await resolveBinding(page, { scope: [], chain: [strategy] }, {});
-    return res.ok;
+    if (!res.ok) return false;
+    const landedOn = await page
+      .locator(`[${HANDLE_ATTR}="${res.handle}"]`)
+      .evaluate((el, attr) => el.getAttribute(attr), OBS_ATTR);
+    return landedOn === obsHandle;
   } catch {
     return false;
   }
@@ -249,16 +287,18 @@ async function provesUnique(page: Page, strategy: Strategy): Promise<boolean> {
 
 /**
  * Turns the `ObservedNode` the model touched into a `Binding` whose every
- * strategy was proven, live, to resolve to exactly one element on this page.
+ * strategy was proven, live, to resolve to exactly one element on this page
+ * *and* to resolve to this element — see `resolvesToTarget`, which is where
+ * both halves are checked and where the second half used to be missing.
  *
  * Throws if `node.handle` does not match exactly one element under
  * `OBS_ATTR` — covering both a stale handle (from a prior, since-renumbered
  * observation) and a handle that was never stamped at all — and throws
  * again, separately, if every candidate strategy this function can generate
- * fails to resolve uniquely. The second case is the one the design exists to
- * prevent: rather than emit a chain that might resolve ambiguously the next
- * time this page is visited, `proveControl` refuses to produce a binding at
- * all.
+ * fails to resolve uniquely to that element. The second case is the one the
+ * design exists to prevent: rather than emit a chain that might resolve
+ * ambiguously, or cleanly onto some other control, the next time this page
+ * is visited, `proveControl` refuses to produce a binding at all.
  *
  * Candidate generation deliberately excludes two shapes that would make
  * "proving" vacuous: an `id`-based CSS selector, and a full ancestor path.
@@ -281,11 +321,8 @@ async function provesUnique(page: Page, strategy: Strategy): Promise<boolean> {
  * can supply across tiers (a strategy that independently resolves always
  * wins immediately, with zero attempts, wherever it is placed in a probe
  * chain — `attempts` cannot rank two things that both win on the first
- * try). `attempts.length` is used instead where it is actually informative:
- * choosing among tier 2's own escalating family of selectors, run as one
- * combined chain so the resolver's own bookkeeping — not a second one this
- * function would otherwise have to keep by hand — says how many weaker
- * guesses were tried before one stuck.
+ * try). Within tier 2's own escalating family of selectors the first
+ * candidate that proves — weakest first — is the one kept.
  */
 export async function proveControl(page: Page, node: ObservedNode): Promise<Binding> {
   const loc = page.locator(`[${OBS_ATTR}="${node.handle}"]`);
@@ -302,30 +339,27 @@ export async function proveControl(page: Page, node: ObservedNode): Promise<Bind
 
   if (facts.testid !== null && facts.testid !== "") {
     const s: Strategy = { tier: 0, by: "testid", value: facts.testid };
-    if (await provesUnique(page, s)) survivors.push(s);
+    if (await resolvesToTarget(page, s, node.handle)) survivors.push(s);
   }
 
   if (node.name !== "") {
     const s: Strategy = { tier: 1, by: "role", role: node.role, name: node.name };
-    if (await provesUnique(page, s)) survivors.push(s);
+    if (await resolvesToTarget(page, s, node.handle)) survivors.push(s);
   }
 
-  const cssCandidates = buildCssCandidates(facts);
-  if (cssCandidates.length > 0) {
-    const chain: Strategy[] = cssCandidates.map((value) => ({ tier: 2, by: "css", value }));
-    try {
-      const res = await resolveBinding(page, { scope: [], chain }, {});
-      // Every candidate in this family shares tier 2, so `attempts.length`
-      // (the count of rungs tried and rejected before the winner) is exactly
-      // the winner's own index in `chain` — the resolver's bookkeeping
-      // doubles as the answer to "which candidate string won" for free.
-      if (res.ok) {
-        const winner = chain[res.attempts.length];
-        if (winner !== undefined) survivors.push(winner);
-      }
-    } catch {
-      // A malformed candidate (should not happen given the escaping above,
-      // but this boundary fails closed rather than aborting the search).
+  // Weakest candidate first, and the first one that resolves *to this
+  // element* is the one kept. This used to run the whole family as a single
+  // combined chain and recover the winner from `attempts.length`, which was
+  // neat and is no longer available: `resolveBinding` stops at the first rung
+  // that resolves uniquely, so a weak selector landing uniquely on some other
+  // element would end the chain there and hide the stronger candidate that
+  // would have identified the target. Trying them one at a time costs a few
+  // extra round trips at record time and cannot skip the right answer.
+  for (const value of buildCssCandidates(facts)) {
+    const s: Strategy = { tier: 2, by: "css", value };
+    if (await resolvesToTarget(page, s, node.handle)) {
+      survivors.push(s);
+      break;
     }
   }
 
@@ -337,13 +371,14 @@ export async function proveControl(page: Page, node: ObservedNode): Promise<Bind
       rel: facts.anchor.rel,
       accepts: [facts.tag],
     };
-    if (await provesUnique(page, s)) survivors.push(s);
+    if (await resolvesToTarget(page, s, node.handle)) survivors.push(s);
   }
 
   if (survivors.length === 0) {
     throw new Error(
-      `proveControl: no candidate strategy resolves handle "${node.handle}" to a unique element on this page. ` +
-        `Refusing to emit a binding that would resolve ambiguously at replay time.`,
+      `proveControl: no candidate strategy resolves handle "${node.handle}" uniquely to the element it names ` +
+        `on this page. Refusing to emit a binding that would resolve ambiguously — or to a different element — ` +
+        `at replay time.`,
     );
   }
 
