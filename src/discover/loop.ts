@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import type { Locator, Page } from "playwright";
 import { proveControl } from "../artifact/prove.js";
-import { parseArtifact, type CapabilityArtifact } from "../artifact/schema.js";
+import { isEntryUrl, parseArtifact, type CapabilityArtifact } from "../artifact/schema.js";
 import type { RunLogger } from "../evidence/logger.js";
 import { observe, OBS_ATTR, type Observation, type ObservedNode } from "../observe/snapshot.js";
 import { filterRendered } from "../observe/visibility.js";
@@ -17,9 +17,9 @@ import { parseToolCall, type ToolCall } from "./tools.js";
  * Why the loop stopped without recording.
  *
  * The first seven are spec §6's stopping-condition table, one for one. The
- * last two are conditions §6 does not name because it assumes them away, and
- * folding either into a neighbouring reason would make that reason mean two
- * different things at the one place an operator reads it:
+ * last three are conditions §6 does not name because it assumes them away,
+ * and folding any of them into a neighbouring reason would make that reason
+ * mean two different things at the one place an operator reads it:
  *
  *  - `model-output-unusable` — the turn did not parse into the tool
  *    vocabulary, was empty, or named a handle that is not in the observation
@@ -33,6 +33,14 @@ import { parseToolCall, type ToolCall } from "./tools.js";
  *    happened; what cannot happen is recording a flow step naming a control
  *    with no binding. Spec §6 forbids a partial artifact, so the whole run
  *    escalates rather than emitting a flow with a hole in it.
+ *  - `entry-url-unknown` — the goal was reached, but the run never stood on a
+ *    page a replay could be told to open: it started on `about:blank` (a
+ *    fresh Playwright page does) and never navigated anywhere. The same
+ *    reasoning as `control-unprovable`, one level up: what cannot happen is
+ *    recording an artifact that says where it starts by naming somewhere
+ *    nobody can start. Reported separately from `checkpoint-unverified`
+ *    because the checkpoint did verify — the goal was met and the recording
+ *    is what failed.
  */
 export type StopReason =
   | "max-steps"
@@ -43,7 +51,8 @@ export type StopReason =
   | "budget-exceeded"
   | "checkpoint-unverified"
   | "model-output-unusable"
-  | "control-unprovable";
+  | "control-unprovable"
+  | "entry-url-unknown";
 
 export type DiscoveryResult =
   | { status: "recorded"; artifact: CapabilityArtifact; steps: number }
@@ -274,10 +283,10 @@ class ArtifactRecorder {
     tenant: string;
     variant: string;
     /**
-     * Where the run started, captured before the first turn rather than read
-     * off the page at the end — by `finish` time the loop has navigated and
-     * `page.url()` is wherever it finished, which is not where a replay should
-     * begin.
+     * Where the run started — the first address it actually stood on, not
+     * `page.url()` at `finish` time, which by then is wherever the flow ended
+     * up. See the `entryUrl` binding in `discover()` for why "before the first
+     * turn" was not enough on its own.
      */
     entryUrl: string;
   }): CapabilityArtifact {
@@ -359,12 +368,23 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
 
   const recorder = new ArtifactRecorder();
   /**
-   * Where this run began, read once before the first turn. It is what a replay
-   * must open to reproduce the run, and it has to be captured now: by the time
-   * an artifact is recorded the loop has navigated, and `page.url()` then is
-   * wherever the flow ended up, not where it started.
+   * Where this run began. It is what a replay must open to reproduce the run,
+   * and it cannot be read at the end: by the time an artifact is recorded the
+   * loop has navigated, and `page.url()` then is wherever the flow ended up.
+   *
+   * Reading it before the first turn is necessary and was not sufficient. A
+   * fresh Playwright page is on `about:blank`, so a run whose opening move is
+   * a navigate — the most natural first move a model makes, and what this
+   * project's own e2e script does — recorded `entryUrl: "about:blank"`, which
+   * `z.string().url()` happily accepted. One committed artifact shipped that
+   * way. So the entry is *where the run first actually stood*: the page it
+   * started on if that page was somewhere a replay could open, and otherwise
+   * the destination of the navigation that first put it somewhere real.
+   *
+   * `null` until that is known, and `null` at `done` time is a run that never
+   * stood anywhere replayable — see `entry-url-unknown`.
    */
-  const entryUrl = page.url();
+  let entryUrl: string | null = isEntryUrl(page.url()) ? page.url() : null;
   /** The model's turns, and nothing else — see property 2 above. */
   const history: DriverTurn[] = [];
 
@@ -482,6 +502,22 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
         await page.goto(call.input.url);
         await settle(page);
         lastTurnActed = true;
+
+        // The navigation that first puts the run somewhere replayable IS the
+        // entry, and is therefore not also a step: a replay opens `entryUrl`
+        // and would otherwise re-open the same address as its first act.
+        // Every later navigation is logic and is recorded.
+        //
+        // What is recorded is what the model asked for, never `page.url()`
+        // after the goto. This target puts `;jsessionid=…` in the addresses it
+        // renders, and an artifact is a file in git — the landed URL is the
+        // one that can carry a session token into it.
+        if (entryUrl === null) {
+          entryUrl = call.input.url;
+          log.log({ kind: "discover.entry", url: entryUrl });
+        } else {
+          recorder.step({ kind: "navigate", url: relativeToEntry(call.input.url, entryUrl) });
+        }
         continue;
       }
 
@@ -514,6 +550,15 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
           return halt("control-unprovable", { detail: (thrown as Error).message, control: "checkpoint" });
         }
         recorder.step({ kind: "checkpoint", control });
+
+        // The goal was reached on a page nobody can be told to open — the run
+        // started on `about:blank` and never navigated. Escalate rather than
+        // record: `finish` would throw on the schema's own entry-URL check a
+        // line later, and a throw out of `discover()` is not a stopping
+        // condition anyone can route on.
+        if (entryUrl === null) {
+          return halt("entry-url-unknown", { url: page.url() });
+        }
 
         const artifact = recorder.finish({
           id: slug(goal) || "capability",
@@ -588,6 +633,32 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
         await settle(page);
       }
     }
+  }
+}
+
+/**
+ * A navigation destination as a recorded flow step spells it: root-relative
+ * when it shares the entry's origin, absolute otherwise.
+ *
+ * `flow` is the block shared across every tenant running this product, so a
+ * tenant's hostname must not end up inside it — spec §4's overlay invariant
+ * is that a tenant override may touch `bindings` and nothing else, and a step
+ * hardcoding `http://tenant-a.example/…` puts one tenant's surface where no
+ * other tenant's override can reach it. `entryUrl` is in `bindings`, where a
+ * host belongs, and a relative step resolves against it at replay with one
+ * `new URL(step.url, entryUrl)`.
+ *
+ * A destination on a *different* origin (legal whenever the allowlist permits
+ * more than one) genuinely is absolute and is recorded as such; `new URL`
+ * resolves both forms with the same call, so replay needs no branch.
+ */
+function relativeToEntry(target: string, entryUrl: string): string {
+  try {
+    const t = new URL(target);
+    if (t.origin !== new URL(entryUrl).origin) return t.href;
+    return `${t.pathname}${t.search}${t.hash}`;
+  } catch {
+    return target;
   }
 }
 

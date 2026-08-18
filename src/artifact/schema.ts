@@ -142,10 +142,38 @@ const ExtractStepSchema = z
   })
   .strict();
 
+/**
+ * The one step that names a place rather than a control, and therefore the
+ * one that has no `control` field for `superRefine` below to check.
+ *
+ * Without it a recorded flow silently drops every navigation the model
+ * performed: `discover()` executed the `goto` and had nowhere to write it
+ * down, so an artifact whose goal is reachable only by navigating replayed as
+ * a sequence of clicks against whatever page the replay engine happened to
+ * open. The gap was real and shipped — see the entry-URL note on
+ * `BindingsSchema`.
+ *
+ * `url` is resolved against `bindings.entryUrl` at replay time
+ * (`new URL(step.url, bindings.entryUrl)`), and the recorder writes it as a
+ * root-relative path whenever the destination shares the entry's origin.
+ * That is the three-block model doing its job, not a convenience: `flow` is
+ * the logic and is shared across every tenant running this product, so one
+ * tenant's hostname must not be baked into it. A cross-origin destination
+ * (legal, if the allowlist permits more than one origin) is recorded
+ * absolute, and `new URL` resolves both forms with the same single call.
+ */
+const NavigateStepSchema = z
+  .object({
+    kind: z.literal("navigate"),
+    url: z.string(),
+  })
+  .strict();
+
 const StepSchema = z.discriminatedUnion("kind", [
   ActStepSchema,
   CheckpointStepSchema,
   ExtractStepSchema,
+  NavigateStepSchema,
 ]);
 
 /** THE LOGIC — shared across tenants. */
@@ -165,6 +193,26 @@ const FlowSchema = z
  * could occupy, valid or not.
  */
 /**
+ * Whether a string is somewhere a replay could actually be told to start.
+ *
+ * Exported because `discover()` needs the identical test while the run is
+ * still in progress — it has to know whether the page it is looking at
+ * counts as an entry, and it must reach that verdict with the same predicate
+ * the schema will apply at the end. Two copies of "is this a usable URL"
+ * would be one copy too many, and the one that disagreed would be the one
+ * that recorded the artifact.
+ */
+export function isEntryUrl(u: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(u);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === "http:" || parsed.protocol === "https:";
+}
+
+/**
  * `entryUrl` lives here, in the per-tenant block, and that placement is the
  * three-block model doing its job rather than an arbitrary choice.
  *
@@ -181,6 +229,19 @@ const FlowSchema = z
  * not replayable standalone — something outside it has to know, and that
  * knowledge has nowhere to live.
  *
+ * Required is not the same as *usable*, which is what `isEntryUrl` below adds
+ * and why it is here rather than in the loop that produces the value. The
+ * first version of this field was `z.string().url()`, which accepts
+ * `"about:blank"` — and `about:blank` is exactly what a run records when the
+ * model's opening move is a navigate, because the loop read `page.url()`
+ * before the first turn and a fresh Playwright page is on `about:blank`.
+ * A committed artifact shipped that way, with three proven bindings for pages
+ * under `http://localhost:8081/parabank/` and a `bindings.entryUrl` of
+ * `about:blank`, and every e2e assertion over it passed. Requiring an
+ * absolute http(s) URL makes the value that was recorded unrepresentable, so
+ * the same mistake cannot be made silently a second time in a different
+ * caller.
+ *
  * Whether the URL is *permitted* is deliberately not checked here. The
  * allowlist is policy, it is evaluated per run against the config in force,
  * and the same artifact can be legal for one caller and refused for another.
@@ -191,7 +252,9 @@ const BindingsSchema = z
   .object({
     tenant: z.string(),
     variant: z.string(),
-    entryUrl: z.string().url(),
+    entryUrl: z.string().refine(isEntryUrl, {
+      message: 'must be an absolute http(s) URL a replay can open (e.g. "about:blank" is not somewhere to start)',
+    }),
     controls: z.record(z.string(), BindingSchema),
   })
   .strict();
@@ -209,8 +272,15 @@ export const CapabilityArtifactSchema = z
     // control with no binding is an artifact that cannot replay anywhere.
     // This is the one piece of cross-block validation the per-block schemas
     // above cannot express on their own.
+    //
+    // A `navigate` step names a place rather than a control, so it has
+    // nothing to check here. The narrowing is on the field's presence in the
+    // discriminated union rather than on `step.kind`, so a future step that
+    // also carries no control needs no edit here and a future step that does
+    // carry one is checked without being remembered.
     const bound = new Set(Object.keys(artifact.bindings.controls));
     artifact.flow.steps.forEach((step, i) => {
+      if (!("control" in step)) return;
       if (!bound.has(step.control)) {
         ctx.addIssue({
           code: "custom",

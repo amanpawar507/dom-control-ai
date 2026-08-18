@@ -109,17 +109,25 @@ const GOAL = "reach the accounts overview";
 let browser: Browser;
 let page: Page;
 
+/**
+ * Serves `PAGES` inside the browser process. Named rather than inline because
+ * a test that needs a page which has *never navigated* (to prove what the
+ * entry URL is when the model's first move is a navigate) has to build its
+ * own page and give it the same routing.
+ */
+const serve: Parameters<Page["route"]>[1] = async (route) => {
+  const body = PAGES[new URL(route.request().url()).pathname];
+  await route.fulfill(
+    body === undefined
+      ? { status: 404, contentType: "text/html", body: "<!doctype html><title>404</title>" }
+      : { status: 200, contentType: "text/html", body },
+  );
+};
+
 beforeAll(async () => {
   browser = await chromium.launch();
   page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await page.route("**/*", async (route) => {
-    const body = PAGES[new URL(route.request().url()).pathname];
-    await route.fulfill(
-      body === undefined
-        ? { status: 404, contentType: "text/html", body: "<!doctype html><title>404</title>" }
-        : { status: 200, contentType: "text/html", body },
-    );
-  });
+  await page.route("**/*", serve);
 }, 60_000);
 
 afterAll(async () => {
@@ -137,12 +145,14 @@ interface Overrides {
   maxSteps?: number;
   wallClockMs?: number;
   now?: () => number;
+  /** Defaults to the shared page, which `beforeEach` puts on `INDEX`. */
+  page?: Page;
 }
 
 async function run(o: Overrides): Promise<{ res: DiscoveryResult; log: StubLogger }> {
   const log = new StubLogger();
   const res = await discover({
-    page,
+    page: o.page ?? page,
     goal: GOAL,
     driver: o.driver,
     policy: o.policy ?? CFG,
@@ -175,7 +185,9 @@ describe("discover — success", () => {
     // `bindings` actually binds — the cross-block rule `parseArtifact` enforces.
     expect(res.artifact.flow.steps.map((s) => s.kind)).toEqual(["act", "act", "checkpoint"]);
     const bound = Object.keys(res.artifact.bindings.controls);
-    for (const step of res.artifact.flow.steps) expect(bound).toContain(step.control);
+    for (const step of res.artifact.flow.steps) {
+      if ("control" in step) expect(bound).toContain(step.control);
+    }
 
     expect(res.artifact.capability.goal).toBe(GOAL);
     // Discovery produces a draft; approving is a human act.
@@ -242,6 +254,118 @@ describe("discover — success", () => {
     expect(driver.seen.map((s) => s.history.length)).toEqual([0, 1, 2]);
     for (const { history } of driver.seen) {
       for (const turn of history) expect(Object.keys(turn)).toEqual(["calls"]);
+    }
+  });
+});
+
+describe("discover — an artifact has to say where it starts, and where it went", () => {
+  // A capability is replayed with no model in the loop, so the two things a
+  // replay engine cannot infer are the address to open and the navigations the
+  // flow depends on. Neither was recorded: the flow step union had no
+  // `navigate`, and `entryUrl` was `page.url()` read before the first turn —
+  // which is `about:blank` whenever the model's opening move is a navigate,
+  // the most natural opening move there is. `z.string().url()` accepted it,
+  // and a committed artifact shipped with three proven bindings for pages
+  // under `/parabank/` and an entry of `about:blank`.
+  //
+  // These tests are what "green is not evidence" means here: the whole e2e
+  // suite ran over that artifact.
+
+  /** A page that has never navigated, so `page.url()` on it is `about:blank`. */
+  async function freshPage(): Promise<Page> {
+    const p = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await p.route("**/*", serve);
+    return p;
+  }
+
+  it("records where the run actually began when the model's opening move is a navigate", async () => {
+    const blank = await freshPage();
+    try {
+      expect(blank.url()).toBe("about:blank");
+
+      const driver = new HandleScript([
+        [{ name: "navigate", input: { url: INDEX } }],
+        [{ name: "click", input: { handle: "@Accounts Overview" } }],
+        [{ name: "done", input: { checkpoint: "@Accounts Overview" } }],
+      ]);
+      const { res } = await run({ driver, page: blank });
+
+      expect(res.status).toBe("recorded");
+      if (res.status !== "recorded") throw new Error("unreachable");
+      expect(res.artifact.bindings.entryUrl).toBe(INDEX);
+      expect(res.artifact.bindings.entryUrl).not.toBe("about:blank");
+
+      // That opening navigate is the entry, so it is not also a step — a
+      // replay opening `entryUrl` would otherwise re-open the same address as
+      // its first act.
+      expect(res.artifact.flow.steps.map((s) => s.kind)).toEqual(["act", "checkpoint"]);
+    } finally {
+      await blank.close();
+    }
+  });
+
+  it("keeps the page it started on as the entry when the model navigates away later", async () => {
+    // The mirror of the test above: the run *did* start somewhere replayable,
+    // so a later navigation must not overwrite the entry with wherever the
+    // flow went next.
+    const driver = new HandleScript([
+      [{ name: "navigate", input: { url: OVERVIEW } }],
+      [{ name: "done", input: { checkpoint: "@Home" } }],
+    ]);
+
+    const { res } = await run({ driver });
+
+    if (res.status !== "recorded") throw new Error(`expected a recording, got ${JSON.stringify(res)}`);
+    expect(res.artifact.bindings.entryUrl).toBe(INDEX);
+  });
+
+  it("records a mid-flow navigation as a flow step, as a path rather than a tenant's host", async () => {
+    // Without a `navigate` step the loop performed the goto and had nowhere to
+    // write it down: the artifact's flow was a list of clicks against whatever
+    // page the replay engine happened to be on.
+    //
+    // The path, not the absolute URL, because `flow` is the block shared
+    // across every tenant running this product (spec §4) and a tenant override
+    // may modify `bindings` only. `bindings.entryUrl` carries the host; the
+    // step resolves against it.
+    const driver = new HandleScript([
+      [{ name: "navigate", input: { url: OVERVIEW } }],
+      [{ name: "done", input: { checkpoint: "@Home" } }],
+    ]);
+
+    const { res } = await run({ driver });
+
+    if (res.status !== "recorded") throw new Error(`expected a recording, got ${JSON.stringify(res)}`);
+    expect(res.artifact.flow.steps.map((s) => s.kind)).toEqual(["navigate", "checkpoint"]);
+    expect(res.artifact.flow.steps[0]).toEqual({ kind: "navigate", url: "/parabank/overview.htm" });
+    expect(JSON.stringify(res.artifact.flow)).not.toContain(ORIGIN);
+
+    // And it resolves back to where the run went, with the one call a replay
+    // engine makes.
+    expect(new URL("/parabank/overview.htm", res.artifact.bindings.entryUrl).href).toBe(OVERVIEW);
+  });
+
+  it("escalates rather than recording an artifact whose entry nobody can open", async () => {
+    // The goal was reached — the checkpoint verified — on a page that exists
+    // only in this process. There is no address to hand a replay, and the
+    // honest outcome is an escalation with its own reason rather than a
+    // recording that names `about:blank`, or a throw out of `discover()` that
+    // no caller can route on.
+    const blank = await freshPage();
+    try {
+      await blank.setContent(`<button data-testid="only">Only</button>`);
+      expect(blank.url()).toBe("about:blank");
+
+      const driver = new HandleScript([[{ name: "done", input: { checkpoint: "@Only" } }]]);
+      const { res, log } = await run({ driver, page: blank });
+
+      expect(res).toMatchObject({ status: "escalated", reason: "entry-url-unknown", steps: 1 });
+      // The checkpoint did verify; this is a recording failure, not a goal
+      // failure, and the evidence has to be able to tell them apart.
+      expect(log.events.find((e) => e.kind === "discover.checkpoint")).toMatchObject({ verified: true });
+      expect(log.kinds).not.toContain("discover.recorded");
+    } finally {
+      await blank.close();
     }
   });
 });

@@ -66,6 +66,49 @@ describe("artifact schema", () => {
     expect(() => parseArtifact(broken)).toThrow();
   });
 
+  it.each(["about:blank", "not a url", "file:///tmp/x.html", ""])(
+    "rejects %o as an entry URL, because a replay cannot be told to start there",
+    (entryUrl) => {
+      // `z.string().url()` accepted `about:blank`, and `about:blank` is
+      // exactly what the loop recorded whenever the model's opening move was a
+      // navigate — a fresh Playwright page is on `about:blank` until it lands.
+      // A committed artifact shipped that way: three proven bindings for pages
+      // under `/parabank/`, and an entry a replay engine cannot open. The
+      // schema is where that becomes unrepresentable rather than merely
+      // unrecorded, so a second caller cannot reintroduce it.
+      const broken = structuredClone(valid);
+      broken.bindings.entryUrl = entryUrl;
+      expect(() => parseArtifact(broken)).toThrow(/entryUrl/);
+    },
+  );
+
+  it("accepts a navigate step, which names a place rather than a control", () => {
+    // Without this the loop performed the model's navigation and had nowhere
+    // to record it, so an artifact whose goal is reachable only by navigating
+    // replayed as a sequence of clicks against whatever page happened to be
+    // open. The step carries a url and no control, so the cross-block
+    // "every step names a bound control" rule must not fire on it — and must
+    // still fire on every step that does name one.
+    const withNav = structuredClone(valid);
+    withNav.flow.steps.unshift({ kind: "navigate", url: "/parabank/findtrans.htm" } as never);
+    const parsed = parseArtifact(withNav);
+    expect(parsed.flow.steps[0]).toEqual({ kind: "navigate", url: "/parabank/findtrans.htm" });
+
+    // The rule still binds for the steps that do name a control.
+    const stillChecked = structuredClone(withNav);
+    stillChecked.flow.steps.push({ kind: "act", action: "click", control: "ghost_control" });
+    expect(() => parseArtifact(stillChecked)).toThrow(/ghost_control/);
+  });
+
+  it("refuses a navigate step that smuggles in a control", () => {
+    // `.strict()` on the branch. A navigate resolves against `bindings.entryUrl`,
+    // not against a binding, and a step carrying both would be two different
+    // instructions wearing one kind.
+    const broken = structuredClone(valid);
+    broken.flow.steps.unshift({ kind: "navigate", url: "/x.htm", control: "txn_id" } as never);
+    expect(() => parseArtifact(broken)).toThrow();
+  });
+
   it("keeps the entry URL in the per-tenant block, where an overlay can correct it", () => {
     // Placement is load-bearing, not cosmetic. `capability` and `flow` are
     // shared across every tenant running the vendor product; `bindings` is the

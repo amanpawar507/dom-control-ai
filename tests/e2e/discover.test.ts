@@ -114,9 +114,26 @@ describe("discovery against the live ParaBank target", () => {
     // One click, one extract, one checkpoint. The opening `navigate` is not a
     // flow step: spec §6 makes the entry URL part of the *target* a capability
     // is invoked against, not part of the logic that is shared across tenants.
+    // It is not dropped either — it is where `bindings.entryUrl` comes from,
+    // asserted below.
     expect(flow.steps.map((s) => s.kind)).toEqual(["act", "extract", "checkpoint"]);
-    for (const step of flow.steps) expect(Object.keys(bindings.controls)).toContain(step.control);
+    for (const step of flow.steps) {
+      if ("control" in step) expect(Object.keys(bindings.controls)).toContain(step.control);
+    }
     expect(flow.steps.at(-1)).toMatchObject({ kind: "checkpoint" });
+  });
+
+  it("records the address the run actually began at, not the page it was created on", () => {
+    if (result.status !== "recorded") throw new Error("no artifact was recorded");
+
+    // The run's opening move is a `navigate`, and a fresh Playwright page is
+    // on `about:blank` until it lands. Reading `page.url()` before the first
+    // turn therefore recorded `about:blank` as the entry — accepted by
+    // `z.string().url()`, asserted by nothing, and committed: the artifact in
+    // `evidence/discover-e2e-1786949218818/run.jsonl` tells a replay engine to
+    // start at `about:blank` and then resolve three bindings for pages under
+    // `/parabank/`. Every assertion in this file passed over it.
+    expect(result.artifact.bindings.entryUrl).toBe(`${BASE}/index.htm`);
   });
 
   it("proves every binding against the real surface, not a fixture with test ids", async () => {
