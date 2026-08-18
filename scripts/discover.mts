@@ -22,6 +22,7 @@ import { AnthropicDriver, DISCOVERY_MODEL } from "../src/discover/anthropic.js";
 import { Budget, BudgetExceeded } from "../src/discover/budget.js";
 import { recordCassette } from "../src/discover/cassette.js";
 import { discover } from "../src/discover/loop.js";
+import { saveArtifact } from "../src/artifact/store.js";
 import { RunLogger } from "../src/evidence/logger.js";
 import type { PolicyConfig } from "../src/policy/gate.js";
 import { ParabankSessionProvider } from "../src/session/playwright-state.js";
@@ -35,6 +36,7 @@ const { values } = parseArgs({
     base: { type: "string", default: "http://localhost:8081/parabank" },
     entry: { type: "string" },
     cassette: { type: "string", default: "tests/cassettes/parabank-account-activity.json" },
+    video: { type: "string" },
   },
 });
 
@@ -129,9 +131,18 @@ const log = new RunLogger(runId);
 const session = await new ParabankSessionProvider(BASE).acquire("parabank", "local");
 
 const browser = await chromium.launch();
+/**
+ * `--video <dir>` records the run to a webm. Off by default: it costs a little
+ * time and disk on every run, and the evidence log is the artifact that
+ * matters for auditing. It is worth having anyway, because a JSONL trail tells
+ * you which control the model chose and a recording tells you what the page
+ * looked like when it chose it — and when a run goes wrong those are different
+ * questions.
+ */
 const context = await browser.newContext({
   viewport: VIEWPORT,
   storageState: JSON.parse(session.storageState),
+  ...(values.video === undefined ? {} : { recordVideo: { dir: values.video, size: VIEWPORT } }),
 });
 const page = await context.newPage();
 await page.goto(ENTRY);
@@ -223,9 +234,24 @@ if (failure !== null) {
 } else if (result !== null) {
   console.log("");
   if (result.status === "recorded") {
-    const artifactPath = join(dirname(log.path()), "artifact.json");
-    writeFileSync(artifactPath, `${JSON.stringify(result.artifact, null, 2)}\n`, "utf8");
-    console.log(`--- recorded a capability in ${result.steps} step(s) --- ${artifactPath}`);
+    // Two writes, for two different readers, and the distinction matters.
+    //
+    // The evidence copy belongs to this run: it sits beside the JSONL trail so
+    // an auditor can see what was produced by the run they are reading, and it
+    // lives in a gitignored directory because unreviewed run output is a leak
+    // vector.
+    //
+    // The store copy is the deliverable. The design's claim is that the
+    // artifact is the product, and a product written only into scratch does
+    // not survive a `git clean`, cannot be diffed in review, and gives the
+    // replay engine nothing to load. `saveArtifact` refuses to overwrite a
+    // version already approved.
+    const runCopy = join(dirname(log.path()), "artifact.json");
+    writeFileSync(runCopy, `${JSON.stringify(result.artifact, null, 2)}\n`, "utf8");
+    const stored = saveArtifact(process.cwd(), result.artifact);
+    console.log(`--- recorded a capability in ${result.steps} step(s) ---`);
+    console.log(`    store    ${stored}`);
+    console.log(`    run copy ${runCopy}`);
     console.log(JSON.stringify(result.artifact, null, 2));
   } else {
     console.log(`--- escalated after ${result.steps} step(s): ${result.reason} ---`);
