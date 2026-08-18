@@ -154,7 +154,7 @@ describe("proveControl", () => {
 
   it("refuses a handle that was never stamped at all", async () => {
     await page.goto(fixture("login"));
-    const neverStamped: ObservedNode = { handle: "o999n999", role: "textbox", name: "", value: null, editable: true };
+    const neverStamped: ObservedNode = { handle: "o999n999", role: "textbox", name: "", valueDigest: null, editable: true };
     await expect(proveControl(page, neverStamped)).rejects.toThrow(/matches 0 element/i);
   });
 

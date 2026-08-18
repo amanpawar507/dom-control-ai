@@ -1,4 +1,5 @@
 // src/observe/snapshot.ts
+import { createHash } from "node:crypto";
 import type { Page } from "playwright";
 
 /**
@@ -30,12 +31,40 @@ let epoch = 0;
  * is what makes record-time proving (Task 6) meaningful — there is no
  * brittle string for the model to smuggle into a recorded binding, because
  * it was never in its hands to begin with.
+ *
+ * The same reasoning is why this node carries no `value`. It used to, raw, and
+ * three of the four things downstream of it went to considerable trouble to
+ * drop that field again — the recorder turns it into a `$parameter`
+ * (`discover/loop.ts`), the cassette replaces it with `"<redacted>"`
+ * (`discover/cassette.ts`) — while the fourth, the prompt builder, printed it
+ * verbatim and echoed it back into every subsequent turn. Spec §9: "the
+ * redactor sits at perception, not at the log sink: a sensitive value never
+ * enters the pipeline, so there is no sink that can leak it." Three sinks
+ * remembering and one forgetting is what a boundary exists to make impossible,
+ * so the value stops here instead.
  */
 export interface ObservedNode {
   handle: string;
   role: string;
   name: string;
-  value: string | null;
+  /**
+   * Whether this control holds contents, and whether those contents have
+   * changed since the last observation — never what they are.
+   *
+   *   `null` — this node holds no contents at all (a link, a button).
+   *   `""`   — it holds contents and they are empty.
+   *   else   — an opaque digest of them.
+   *
+   * A digest rather than a boolean because the loop's dead-end detector asks
+   * "did the last action change anything observable?" and a control whose
+   * contents changed from "1" to "12" changed something observable. A boolean
+   * would answer "no" three times running and call a working flow a dead end.
+   * A digest answers exactly, reveals nothing, and is not something a caller
+   * can accidentally render as text: no consumer can turn it back into what
+   * was typed, which is the property that makes this a boundary rather than
+   * one more sink that has to remember.
+   */
+  valueDigest: string | null;
   editable: boolean;
 }
 
@@ -107,8 +136,26 @@ const OBSERVABLE_SELECTOR =
  * exactly-one-match-or-fail path reports it. This is the same lesson as the
  * Phase 1 policy gate, which was keyed on a name the caller supplied and was
  * therefore safe only while every caller was honest.
+ *
+ * `RawNode` below is what this walk produces and it is deliberately NOT
+ * `ObservedNode`: it still carries a control's literal contents, because that
+ * is what a DOM read returns. `observe()` reduces `value` to a digest before
+ * anything else in the process is handed the result, and this function is
+ * private to this module so there is no other way to reach the raw form.
+ * Hashing in the page instead would be better still and is not available: the
+ * only in-page digest is `crypto.subtle`, which needs a secure context, and
+ * both the test origins (`http://target.invalid`) and the fixture origin
+ * (`file://`) are not one.
  */
-async function walk(page: Page, ep: number): Promise<ObservedNode[]> {
+interface RawNode {
+  handle: string;
+  role: string;
+  name: string;
+  value: string | null;
+  editable: boolean;
+}
+
+async function walk(page: Page, ep: number): Promise<RawNode[]> {
   return page.evaluate(
     ({ selector, attr, ep }: { selector: string; attr: string; ep: number }) => {
       const results: Array<{
@@ -206,8 +253,32 @@ async function walk(page: Page, ep: number): Promise<ObservedNode[]> {
 }
 
 /**
+ * The redaction boundary, in one line.
+ *
+ * Empty stays empty — that a field is blank is a fact about the page, not
+ * about its contents, and the difference between "nothing typed here yet" and
+ * "something is typed here" is exactly what a model needs to decide what to do
+ * next. Anything else becomes a digest with no way back.
+ *
+ * Truncated to 16 hex characters because the only question ever asked of it is
+ * "same as last turn?", and a shorter string keeps an accidental appearance in
+ * a debug print from looking like content.
+ */
+function valueDigestOf(value: string | null): string | null {
+  if (value === null || value === "") return value;
+  return createHash("sha256").update(value).digest("hex").slice(0, 16);
+}
+
+/**
  * One turn's worth of what the model can see: every addressable node, plus
  * enough page identity (`url`, `title`) to know where it is.
+ *
+ * This is where perception ends and the pipeline begins, which is why the
+ * value reduction happens here rather than in any of the four places that
+ * consume an `Observation`. Spec §9 puts the redactor at perception precisely
+ * so that the count of places that have to remember is one; `loop.ts` and
+ * `cassette.ts` both remembered and `anthropic.ts` did not, which is the
+ * arrangement a boundary exists to rule out.
  *
  * The screenshot is opt-in and omitted by default — images dominate token
  * cost, and most turns need only the structural snapshot above. When asked
@@ -216,7 +287,14 @@ async function walk(page: Page, ep: number): Promise<ObservedNode[]> {
  */
 export async function observe(page: Page, opts?: { screenshot?: boolean }): Promise<Observation> {
   epoch += 1;
-  const nodes = await walk(page, epoch);
+  const raw = await walk(page, epoch);
+  const nodes: ObservedNode[] = raw.map((n) => ({
+    handle: n.handle,
+    role: n.role,
+    name: n.name,
+    valueDigest: valueDigestOf(n.value),
+    editable: n.editable,
+  }));
 
   let screenshot: string | null = null;
   if (opts?.screenshot === true) {

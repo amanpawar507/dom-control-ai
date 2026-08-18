@@ -158,23 +158,51 @@ function renderHistory(history: readonly DriverTurn[]): string {
   return `\nWhat you have done so far (handles from those turns have since expired):\n${lines.join("\n")}\n`;
 }
 
-/** Every argument except the address. `handle` and `checkpoint` are dropped. */
+/**
+ * The tool-call arguments a step log may repeat back, named one by one.
+ *
+ * An allowlist, not a denylist, and that is the whole point. The denylist
+ * version dropped `handle` and `checkpoint` and kept everything else, which
+ * meant `fill`'s and `select`'s `value` — a control's literal contents — was
+ * echoed into *every subsequent turn's* prompt, not merely the turn it was
+ * typed on. Three other modules drop that field structurally; this one
+ * re-sent it verbatim to a third party once per turn for the rest of the run.
+ *
+ * With an allowlist a tool that gains a new argument is silent here until
+ * someone decides it is safe to repeat, which is the direction this has to
+ * fail. `value` is absent by that decision, not by oversight: the loop cannot
+ * tell a password field from a search box (`observe()` reports role `textbox`
+ * for both), so there is no version of "echo it unless it looks sensitive"
+ * that is not a guess.
+ */
+const ECHOED_ARGS = new Set(["url", "as", "reason", "screenshot"]);
+
 function renderArgs(input: unknown): string {
   if (input === null || typeof input !== "object") return "";
   const parts = Object.entries(input)
-    .filter(([key]) => key !== "handle" && key !== "checkpoint")
+    .filter(([key]) => ECHOED_ARGS.has(key))
     .map(([key, value]) => `${key}=${JSON.stringify(value)}`);
   return parts.length === 0 ? "" : ` (${parts.join(", ")})`;
 }
 
+/**
+ * The page as a table of addressable controls.
+ *
+ * A control's contents are reported as present-or-empty and never quoted.
+ * `observe()` hands this function a digest rather than the text (spec §9 —
+ * see `ObservedNode.valueDigest`), so there is nothing here to print even if a
+ * later edit wanted to: the leak is closed at the boundary and this is just
+ * the rendering of what survives it. What the model needs from the field is
+ * whether it still has to type into it, and that is what it gets.
+ */
 function renderObservation(observation: Observation): string {
   if (observation.nodes.length === 0) {
     return "This page has no addressable controls.";
   }
   const rows = observation.nodes.map((node) => {
-    const value = node.value === null ? "" : ` | value ${JSON.stringify(node.value)}`;
+    const contents = node.valueDigest === null ? "" : node.valueDigest === "" ? " | empty" : " | filled";
     const editable = node.editable ? " | editable" : "";
-    return `  ${node.handle} | ${node.role} | ${node.name}${editable}${value}`;
+    return `  ${node.handle} | ${node.role} | ${node.name}${editable}${contents}`;
   });
   return `Controls on this page (handle | role | name):\n${rows.join("\n")}`;
 }

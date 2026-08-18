@@ -17,9 +17,9 @@ const obsStub: Observation = {
   url: "https://example.test/synthetic/login",
   title: "Synthetic Login — DCA Fixture",
   nodes: [
-    { handle: "live-a", role: "textbox", name: "Sample Account Handle", value: null, editable: true },
-    { handle: "live-b", role: "textbox", name: "Sample Passphrase", value: null, editable: true },
-    { handle: "live-c", role: "button", name: "Enter Sample Vault", value: null, editable: false },
+    { handle: "live-a", role: "textbox", name: "Sample Account Handle", valueDigest: null, editable: true },
+    { handle: "live-b", role: "textbox", name: "Sample Passphrase", valueDigest: null, editable: true },
+    { handle: "live-c", role: "button", name: "Enter Sample Vault", valueDigest: null, editable: false },
   ],
   screenshot: null,
 };
@@ -197,13 +197,13 @@ describe("recordCassette", () => {
     const rec1: Observation = {
       url: "https://example.test/synthetic/profile",
       title: "Synthetic Profile",
-      nodes: [{ handle: "o1n0", role: "textbox", name: "Sample SSN Field", value: "", editable: true }],
+      nodes: [{ handle: "o1n0", role: "textbox", name: "Sample SSN Field", valueDigest: "", editable: true }],
       screenshot: null,
     };
     const rec2: Observation = {
       url: "https://example.test/synthetic/confirm",
       title: "Synthetic Confirm",
-      nodes: [{ handle: "o2n0", role: "link", name: "Continue", value: null, editable: false }],
+      nodes: [{ handle: "o2n0", role: "link", name: "Continue", valueDigest: null, editable: false }],
       screenshot: null,
     };
 
@@ -228,7 +228,7 @@ describe("recordCassette", () => {
     const replay1: Observation = {
       url: rec1.url,
       title: rec1.title,
-      nodes: [{ handle: "z9", role: "textbox", name: "Sample SSN Field", value: "typed during replay", editable: true }],
+      nodes: [{ handle: "z9", role: "textbox", name: "Sample SSN Field", valueDigest: "0123456789abcdef", editable: true }],
       screenshot: null,
     };
     const played1 = await replayer.next(replay1, []);
@@ -240,7 +240,7 @@ describe("recordCassette", () => {
     const replay2: Observation = {
       url: rec2.url,
       title: rec2.title,
-      nodes: [{ handle: "z10", role: "link", name: "Continue", value: null, editable: false }],
+      nodes: [{ handle: "z10", role: "link", name: "Continue", valueDigest: null, editable: false }],
       screenshot: null,
     };
     const played2 = await replayer.next(replay2, [played1]);

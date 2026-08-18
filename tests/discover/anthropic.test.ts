@@ -26,9 +26,9 @@ const obsWithNodes: Observation = {
   url: "http://localhost:8081/parabank/overview.htm",
   title: "ParaBank | Accounts Overview",
   nodes: [
-    { handle: "o1n0", role: "link", name: "Accounts Overview", value: null, editable: false },
-    { handle: "o1n1", role: "combobox", name: "All Credit Debit", value: "All", editable: true },
-    { handle: "o1n2", role: "button", name: "Go", value: null, editable: false },
+    { handle: "o1n0", role: "link", name: "Accounts Overview", valueDigest: null, editable: false },
+    { handle: "o1n1", role: "combobox", name: "All Credit Debit", valueDigest: "digestAll", editable: true },
+    { handle: "o1n2", role: "button", name: "Go", valueDigest: null, editable: false },
   ],
   screenshot: null,
 };
@@ -184,6 +184,76 @@ describe("buildRequest — what the model is given", () => {
     expect(req.tool_choice.disable_parallel_tool_use).toBe(true);
   });
 
+  it("never puts a control's contents in the prompt, on the turn it was typed or any turn after", () => {
+    // The leak this closes was invisible because the two sinks anyone audits —
+    // the artifact and the cassette — were clean: `loop.ts` turns a typed value
+    // into a `$parameter` and `cassette.ts` writes `"<redacted>"`. The prompt
+    // was the third sink and nobody was reading it. `renderObservation` printed
+    // every node's value, and `renderArgs` kept every key except `handle` and
+    // `checkpoint` — so a `fill` value was re-sent to a third party in *every
+    // subsequent turn's* prompt, not just the one it was typed on.
+    //
+    // Both halves are asserted here. The observation half is structural now
+    // (`observe()` carries a digest, not the text — see
+    // tests/observe/snapshot.test.ts), so this drives the argument-echo half
+    // directly and checks the whole rendered request either way.
+    const SECRET = "hunter2-the-password";
+    const req = buildRequest({
+      goal: "log in",
+      observation: obsWithNodes,
+      allowlist: ALLOWLIST,
+      history: [
+        { calls: [{ name: "fill", input: { handle: "o9n1", value: SECRET } }] },
+        { calls: [{ name: "select", input: { handle: "o9n2", value: "chosen-option-value" } }] },
+        { calls: [{ name: "click", input: { handle: "o9n3" } }] },
+      ],
+    });
+
+    const blob = JSON.stringify(req);
+    expect(blob, "a typed value was echoed back into a later turn's prompt").not.toContain(SECRET);
+    // `select` too, and for the same reason the cassette scrubs it and the
+    // recorder parameterises it: the loop cannot tell which field is which.
+    expect(blob, "a selected value was echoed back into a later turn's prompt").not.toContain(
+      "chosen-option-value",
+    );
+
+    // Still a usable step log: what was done survives, only what it was done
+    // to and what was typed are gone.
+    const content = req.messages[0]?.content as string;
+    expect(content).toMatch(/1\. fill/);
+    expect(content).toMatch(/2\. select/);
+    expect(content).toMatch(/3\. click/);
+
+    // Arguments that are not contents are still carried, so this is an
+    // allowlist doing its job rather than a blanket drop that would leave the
+    // model unable to see where it navigated or what it named an extract.
+    const withArgs = buildRequest({
+      goal: "g",
+      observation: obsWithNodes,
+      allowlist: ALLOWLIST,
+      history: [
+        { calls: [{ name: "navigate", input: { url: "http://localhost:8081/parabank/findtrans.htm" } }] },
+        { calls: [{ name: "extract", input: { handle: "o9n4", as: "balance" } }] },
+        { calls: [{ name: "stuck", input: { reason: "nothing here opens an account" } }] },
+      ],
+    });
+    const armed = withArgs.messages[0]?.content as string;
+    expect(armed).toContain("findtrans.htm");
+    expect(armed).toContain("balance");
+    expect(armed).toContain("nothing here opens an account");
+  });
+
+  it("says whether a control holds contents, because that is what the model decides on", () => {
+    // The model still has to know whether a field is already filled; it must
+    // not know with what. `obsWithNodes` carries one node with contents and two
+    // without.
+    const content = buildRequest({ goal: "g", observation: obsWithNodes, allowlist: [] }).messages[0]
+      ?.content as string;
+    expect(content).toMatch(/All Credit Debit \| editable \| filled/);
+    expect(content).not.toContain("digestAll");
+    expect(content).toMatch(/o1n2 \| button \| Go$/m);
+  });
+
   it("says so in words when a page offers nothing addressable", () => {
     const req = buildRequest({
       goal: "g",
@@ -314,7 +384,7 @@ describe("the recorded exchange", () => {
       // Handles and values are deliberately not part of a cassette's match key
       // (src/discover/cassette.ts), so anything goes here — which is the point:
       // a replay in a fresh process sees different handles for the same page.
-      nodes: turn.nodes.map((node, index) => ({ ...node, handle: `replay${index}`, value: null })),
+      nodes: turn.nodes.map((node, index) => ({ ...node, handle: `replay${index}`, valueDigest: null })),
       screenshot: null,
     };
   }

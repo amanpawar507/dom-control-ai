@@ -131,6 +131,12 @@ function handleLocator(page: Page, handle: string): Locator | null {
  *
  * The screenshot is excluded too: it is opt-in, so keying state change on it
  * would make dead-end detection silently depend on a cost flag.
+ *
+ * `valueDigest` is what a control's contents contribute. `observe()` reduces
+ * them at the boundary (spec §9), and a digest is precisely what this function
+ * needs: filling a field with "1" and then with "12" changed something
+ * observable, and a boolean "is it filled" would report three consecutive
+ * no-changes and call a working flow a dead end.
  */
 function digestOf(o: Observation): string {
   // JSON gives unambiguous field separation for free: a name ending where the
@@ -141,7 +147,7 @@ function digestOf(o: Observation): string {
     JSON.stringify([
       o.url,
       o.title,
-      o.nodes.map((n) => [n.role, n.name, n.value, n.editable]),
+      o.nodes.map((n) => [n.role, n.name, n.valueDigest, n.editable]),
     ]),
   );
   return hash.digest("hex");

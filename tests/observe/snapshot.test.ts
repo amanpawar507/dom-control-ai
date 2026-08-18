@@ -164,4 +164,67 @@ describe("observe", () => {
     expect((await observe(page)).screenshot).toBeNull();
     expect((await observe(page, { screenshot: true })).screenshot).toBeTypeOf("string");
   });
+
+  // Spec §9: "the redactor sits at perception, not at the log sink: a
+  // sensitive value never enters the pipeline, so there is no sink that can
+  // leak it." An observation used to carry every editable node's literal
+  // contents. Three consumers dropped that field again — the recorder turns it
+  // into a `$parameter`, the cassette writes `"<redacted>"` — and the fourth,
+  // the prompt builder, printed it and then echoed it into every later turn.
+  // These pin the boundary, so a fifth consumer inherits the property instead
+  // of having to remember it.
+  describe("a control's contents stop at perception", () => {
+    const SECRET = "hunter2-the-password";
+
+    async function withInput(value: string): Promise<{ digest: string | null; blob: string }> {
+      const scratch = await browser.newPage();
+      try {
+        await scratch.setContent(`<input id="pw" name="pw" value="${value}">`);
+        const obs = await observe(scratch);
+        const node = obs.nodes.find((n) => n.editable)!;
+        return { digest: node.valueDigest, blob: JSON.stringify(obs) };
+      } finally {
+        await scratch.close();
+      }
+    }
+
+    it("reports that a control holds contents without reporting the contents", async () => {
+      const { digest, blob } = await withInput(SECRET);
+      expect(blob).not.toContain(SECRET);
+      expect(digest).not.toBeNull();
+      expect(digest).not.toBe("");
+      expect(digest).not.toContain(SECRET);
+    });
+
+    it("keeps empty distinguishable from filled, which is what a model needs", async () => {
+      // "Nothing typed here yet" and "something is typed here" is a fact about
+      // the page, not about the contents, and it is the difference the model
+      // decides its next action on.
+      expect((await withInput("")).digest).toBe("");
+      expect((await withInput("x")).digest).not.toBe("");
+    });
+
+    it("still changes when the contents change, so a working flow is not called a dead end", async () => {
+      // The loop's dead-end detector asks "did that action change anything
+      // observable?". A boolean would answer "no" for a field going 1 → 12 →
+      // 123 and stop a run that was working. Same contents, same digest;
+      // different contents, different digest.
+      const a = await withInput("12345");
+      const b = await withInput("12345");
+      const c = await withInput("123456");
+      expect(a.digest).toBe(b.digest);
+      expect(a.digest).not.toBe(c.digest);
+    });
+
+    it("reports no contents at all for a node that holds none", async () => {
+      const scratch = await browser.newPage();
+      try {
+        await scratch.setContent(`<a href="/x">Somewhere</a>`);
+        const obs = await observe(scratch);
+        expect(obs.nodes[0]!.valueDigest).toBeNull();
+      } finally {
+        await scratch.close();
+      }
+    });
+  });
 });
