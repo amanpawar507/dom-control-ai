@@ -338,7 +338,14 @@ secrets manager behind the same interface, with no change above the seam.
 **Input.** A goal in natural language plus a target — application id and entry
 URL. The target resolves an allowlist and a `SessionProvider` binding.
 
-**Structure.** The SDK tool runner drives the loop over a small typed vocabulary:
+**Structure.** A small per-turn loop drives a typed vocabulary. *(Revised after
+implementation: this said "the SDK tool runner drives the loop". It does not.
+The runner owns the agent loop, and ours has three per-turn obligations the
+runner has no seam for — gate an action before it executes, prove each touched
+control into a binding before recording it, and re-observe between turns.
+Adopting it would also dissolve the `ModelDriver` seam the loop calls instead
+of calling Anthropic, and that seam is what let eleven of twelve implementation
+tasks be built and tested for nothing. We call `messages.create` per turn.)*
 
 | Tool | Purpose |
 |---|---|
@@ -357,6 +364,27 @@ risk classes and what happens at each, and the instruction to call `stuck` rathe
 than guess when the next step is not evident. Step history is kept in the message
 thread; the observation is refreshed each turn rather than accumulated, so
 context stays bounded on long flows.
+
+**What the model can see, and what follows from it.** The observation walks
+**controls** — things that can be clicked, filled, or read as a label — not page
+content. That keeps the snapshot small and the token cost bounded, and it is the
+right default. It also has two consequences that were discovered by running this
+against a real application and belong here rather than in a report:
+
+A goal whose target is page *content* cannot be expressed. On the reference
+target, account balances render in bare table cells, so "find the account
+balance" is not a goal this loop can pursue — the model cannot see the answer
+and could only fail or invent one. It bounds what `extract` can ever return.
+
+More sharply, it caps how strong a *checkpoint* can be. A checkpoint names
+something the model observed, so it can only ever name a control. On a flow
+whose real success condition is "the transaction list now shows debits only",
+the strongest available checkpoint is the dropdown that was set — which holds
+whether or not the list changed. A checkpoint asserting only that an element
+resolves and is rendered is barely stronger than none, and a capability whose
+checkpoint cannot fail will report success at replay no matter what happened.
+Checkpoints therefore need an expected *state*, and the observer needs a way to
+see rendered text, before a recorded capability can certify a business outcome.
 
 **Stopping conditions.** The loop halts on any of:
 
