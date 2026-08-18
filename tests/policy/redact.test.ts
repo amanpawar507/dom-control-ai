@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { redactUrl, redactText, redactValue, redactDeep, stripSessionToken } from "../../src/policy/redact.js";
+import { redactUrl, redactText, redactDeep, stripSessionToken } from "../../src/policy/redact.js";
 
 /**
  * Synthetic, and it must stay synthetic. A real captured token in a test file is
@@ -120,16 +120,8 @@ describe("redactDeep", () => {
   });
 });
 
-describe("redactValue", () => {
-  it("redacts a value whose control is declared sensitive", () => {
-    expect(redactValue("SSN:", "123-45-6789", ["SSN:", "Password:"])).toBe("<redacted:SSN:>");
-  });
-
-  it("passes through a non-sensitive value", () => {
-    expect(redactValue("First Name:", "Ada", ["SSN:"])).toBe("Ada");
-  });
-
-  it("treats a null control name as non-sensitive but still scrubs patterns", () => {
-    expect(redactValue(null, "123-45-6789", [])).toBe("<redacted:ssn>");
-  });
-});
+// `redactValue` and `PolicyConfig.sensitiveControls` were deleted in the
+// second fix round on the Phase 2 final review (item 2): neither ever had a
+// call site, because nothing in this project logs a raw typed value in the
+// first place — see the comment where `redactValue` used to be defined
+// (src/policy/redact.ts) for why that is the stronger property.

@@ -11,7 +11,6 @@ const cfg: PolicyConfig = {
     { tier: "irreversible", matchControl: "^(Clean|Shutdown)$" },
     { tier: "guarded", matchAction: "fill" },
   ],
-  sensitiveControls: ["SSN:"],
   approved: false,
 };
 

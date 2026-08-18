@@ -123,7 +123,6 @@ const POLICY: PolicyConfig = {
       matchControl: "^(Transfer Funds|Bill Pay|Request Loan|Open New Account|Update Contact Info|Log Out)$",
     },
   ],
-  sensitiveControls: ["Password:", "SSN:"],
   approved: false,
 };
 

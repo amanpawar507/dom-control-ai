@@ -38,7 +38,6 @@ const CFG: PolicyConfig = {
     actions: ["click", "fill", "select", "navigate", "extract"],
   },
   riskRules: [{ tier: "irreversible", matchControl: "^(Clean|Shutdown)$" }],
-  sensitiveControls: ["SSN:", "Password:"],
   approved: true,
 };
 
