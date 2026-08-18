@@ -237,7 +237,21 @@ Each was triaged as safe to carry, with a reason:
 
 ---
 
-## 9. Open decision
+## 9. Open decision — resolved 2026-08-18
+
+**Resolved.** The squash performed before the first push rebuilt the branch from
+the scaffold commit, so the ten commits carrying the captured token were never
+pushed and are no longer reachable from any ref. Verified twice, independently:
+by the Phase 2 whole-branch review, and by scanning all 34 reachable commits
+plus both remote branches — zero occurrences, local or upstream.
+
+The token never left the machine. What follows is the reasoning as it stood
+while the decision was live, kept because the decision was a real one and the
+argument is the part worth re-reading.
+
+---
+
+### The decision as it stood
 
 A real captured session token from Parasoft's **public demo instance** exists in
 10 commits of this branch's history. It is absent from `HEAD` and the working
