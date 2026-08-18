@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { chromium, type Browser, type Page } from "playwright";
 import { observe, OBS_ATTR } from "../../src/observe/snapshot.js";
+import { buildRequest } from "../../src/discover/anthropic.js";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
@@ -224,6 +225,57 @@ describe("observe", () => {
         await scratch.setContent(`<a href="/x">Somewhere</a>`);
         const obs = await observe(scratch);
         expect(obs.nodes[0]!.valueDigest).toBeNull();
+      } finally {
+        await scratch.close();
+      }
+    });
+  });
+
+  // Final-review item 1: `buildRequest` (src/discover/anthropic.ts) prints
+  // `observation.url` verbatim as "Page address: …", and ParaBank genuinely
+  // puts `;jsessionid=<token>` in the addresses it renders (confirmed against
+  // the running instance) — so a live session token was reaching a third
+  // party in the prompt. The evidence sink was already clean (`RunLogger`
+  // redacts on write); the prompt was the one sink spec §9's boundary is
+  // supposed to make impossible, because a sink-level redactor never sees it.
+  //
+  // Fixed at perception, not at `buildRequest`: a `<redacted>` marker is not
+  // an address the model could still be told to navigate to, but the session
+  // parameter is surplus once the cookie has round-tripped (confirmed against
+  // the running ParaBank instance: `overview.htm` and
+  // `overview.htm;jsessionid=…` return the identical page either way), so
+  // stripping it yields a URL that still works. `buildRequest` is untouched —
+  // it prints `observation.url` exactly as before — which is what proves the
+  // fix is structural: every consumer of an `Observation` inherits it, not
+  // just this one.
+  //
+  // The page is served via `page.route`, the same zero-network technique
+  // `tests/discover/loop.test.ts` uses, and `target.invalid` is an RFC 2606
+  // name that can never resolve for real — so this stays exactly as
+  // container-free as the rest of the suite.
+  describe("a session token in the address does not reach a third party", () => {
+    it("strips a live-shaped jsessionid from the observed address, and the request built from it carries no token", async () => {
+      const TOKEN = "9A1F2C3D4E5F60718293A4B5C6D7E8F9"; // 32 hex chars — ParaBank's shape
+      const scratch = await browser.newPage();
+      try {
+        await scratch.route("**/*", (route) =>
+          route.fulfill({ status: 200, contentType: "text/html", body: "<button>Go</button>" }),
+        );
+        const url = `http://target.invalid/parabank/overview.htm;jsessionid=${TOKEN}`;
+        await scratch.goto(url);
+
+        const obs = await observe(scratch);
+        expect(obs.url).toBe("http://target.invalid/parabank/overview.htm");
+        expect(obs.url).not.toContain(TOKEN);
+        expect(obs.url).not.toMatch(/jsessionid/i);
+
+        const req = buildRequest({ goal: "reach the accounts overview", observation: obs, allowlist: [] });
+        const blob = JSON.stringify(req);
+        expect(blob, "the prompt built from this observation carried the session token").not.toContain(TOKEN);
+        expect(blob).not.toMatch(/jsessionid/i);
+        // The positive half: the fix removes the token, not the address —
+        // the model can still be told to come back to this page.
+        expect(req.messages[0]?.content).toContain("http://target.invalid/parabank/overview.htm");
       } finally {
         await scratch.close();
       }

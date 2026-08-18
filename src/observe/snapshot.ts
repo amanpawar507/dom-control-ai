@@ -1,6 +1,7 @@
 // src/observe/snapshot.ts
 import { createHash } from "node:crypto";
 import type { Page } from "playwright";
+import { stripSessionToken } from "../policy/redact.js";
 
 /**
  * The attribute an observation stamps, deliberately NOT the resolver's
@@ -303,7 +304,18 @@ export async function observe(page: Page, opts?: { screenshot?: boolean }): Prom
   }
 
   return {
-    url: page.url(),
+    // Stripped, not redacted: ParaBank puts `;jsessionid=<token>` in the
+    // address whenever a page renders before the cookie has round-tripped,
+    // and `buildRequest` (src/discover/anthropic.ts) prints this field
+    // verbatim as "Page address: …" — the one sink §9's boundary exists to
+    // cover and the one this project's own redactor cannot reach, because it
+    // runs at the log sink and the prompt is not a log. A `<redacted>` marker
+    // would not be an address the model could still legitimately navigate
+    // back to; the token is surplus once the cookie exists, so removing it
+    // yields a URL that still works. See `stripSessionToken` for why the
+    // knowledge of what the token looks like lives in `policy/redact.ts`
+    // rather than being a second copy here.
+    url: stripSessionToken(page.url()),
     title: await page.title(),
     nodes,
     screenshot,

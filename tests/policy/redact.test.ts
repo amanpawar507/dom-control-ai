@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { redactUrl, redactText, redactValue, redactDeep } from "../../src/policy/redact.js";
+import { redactUrl, redactText, redactValue, redactDeep, stripSessionToken } from "../../src/policy/redact.js";
 
 /**
  * Synthetic, and it must stay synthetic. A real captured token in a test file is
@@ -26,6 +26,28 @@ describe("redactUrl", () => {
   it("leaves a clean url untouched", () => {
     const u = "http://localhost:8081/parabank/overview.htm";
     expect(redactUrl(u)).toBe(u);
+  });
+});
+
+// Item 1 of the final review's second fix round: `observe()` (perception, not
+// the log sink) needs to hand the model a URL it can still use, so it strips
+// the token rather than marking it. This pins the primitive `observe()`
+// calls; the boundary itself is pinned end-to-end in
+// tests/observe/snapshot.test.ts.
+describe("stripSessionToken", () => {
+  it("removes the parameter entirely, leaving a working address", () => {
+    expect(stripSessionToken("http://localhost:8081/parabank/overview.htm;jsessionid=" + TOKEN)).toBe(
+      "http://localhost:8081/parabank/overview.htm",
+    );
+  });
+
+  it("leaves a clean url untouched", () => {
+    const u = "http://localhost:8081/parabank/overview.htm";
+    expect(stripSessionToken(u)).toBe(u);
+  });
+
+  it("does not leave a <redacted> marker behind — that would not be a real address", () => {
+    expect(stripSessionToken("http://x/a.htm;jsessionid=" + TOKEN)).not.toContain("redacted");
   });
 });
 

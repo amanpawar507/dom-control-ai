@@ -52,6 +52,26 @@ export function redactUrl(url: string): string {
 }
 
 /**
+ * Removes the token rather than marking it — a sink-facing `<redacted>`
+ * marker is not an address, and `observe()` (`src/observe/snapshot.ts`) needs
+ * one: the model may legitimately be told to navigate back to the page it is
+ * looking at. ParaBank (and Java servlet containers generally) treat
+ * `;jsessionid=…` as a fallback for a client that cannot hold a cookie; once
+ * the cookie round-trips, the parameter is surplus and dropping it changes
+ * nothing about which page loads (confirmed against the running instance:
+ * `overview.htm` and `overview.htm;jsessionid=…` return the same 200 with the
+ * session cookie set either way).
+ *
+ * This is perception's redaction, not the sink's, which is why it lives next
+ * to `redactUrl` rather than inside `observe/snapshot.ts`: both functions
+ * need to agree on exactly what a session token in a URL looks like, and
+ * `URL_FORM` is the one place that shape is written down.
+ */
+export function stripSessionToken(url: string): string {
+  return url.replace(URL_FORM, "");
+}
+
+/**
  * Every textual form, in one pass. The cookie *name* is deliberately preserved
  * in each replacement: evidence that a session cookie was set is not itself
  * sensitive, and a redacted line that no longer reads as a cookie has lost the
