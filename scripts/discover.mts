@@ -30,6 +30,7 @@ import { ParabankSessionProvider } from "../src/session/playwright-state.js";
 const { values } = parseArgs({
   options: {
     goal: { type: "string" },
+    id: { type: "string" },
     "max-steps": { type: "string", default: "12" },
     budget: { type: "string", default: "1.00" },
     model: { type: "string", default: DISCOVERY_MODEL },
@@ -42,6 +43,25 @@ const { values } = parseArgs({
 
 if (values.goal === undefined || values.goal.trim() === "") {
   throw new Error("--goal is required: this run drives a model, and a model with no goal spends money for nothing");
+}
+
+/**
+ * Required, and deliberately not derived from `--goal`.
+ *
+ * The id was `slug(goal).slice(0, 48)`, which made the capability's identity —
+ * and therefore its path in the store — a function of prose. Three materially
+ * different goals all beginning "Record the first account number listed in the
+ * ac…" truncate to one id, `version` is hardcoded to 1, and `saveArtifact`
+ * overwrites a draft by design, so the second recording silently destroyed the
+ * first. Naming the capability is a decision about identity ("is this a new
+ * version of that capability, or a different one?") and no sentence of prose
+ * answers it. See `DiscoverOptions.capabilityId`.
+ */
+if (values.id === undefined || values.id.trim() === "") {
+  throw new Error(
+    "--id is required: it names the capability this run records and the directory it is stored under. " +
+      'Reuse the id to record a new version of an existing capability (e.g. --id "account-activity-debits").',
+  );
 }
 
 /**
@@ -184,6 +204,7 @@ mkdirSync(dirname(values.cassette), { recursive: true });
 const driver = recordCassette(values.cassette, live);
 
 console.log(`goal:      ${GOAL}`);
+console.log(`id:        ${values.id}`);
 console.log(`model:     ${values.model}`);
 console.log(`entry:     ${ENTRY}`);
 console.log(`ceiling:   $${CEILING_USD.toFixed(2)} at $${RATE.inPerM}/1M in, $${RATE.outPerM}/1M out`);
@@ -198,6 +219,7 @@ try {
   result = await discover({
     page,
     goal: GOAL,
+    capabilityId: values.id,
     driver,
     policy: POLICY,
     log,

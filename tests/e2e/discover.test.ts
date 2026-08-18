@@ -83,6 +83,10 @@ beforeAll(async () => {
   result = await discover({
     page,
     goal: GOAL,
+    // Supplied, not derived from the goal: a truncated goal slug collides
+    // across materially different goals and the later run overwrites the
+    // earlier one. See `DiscoverOptions.capabilityId`.
+    capabilityId: "customer-care-page",
     driver,
     policy: CFG,
     log,

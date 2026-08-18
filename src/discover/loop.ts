@@ -61,6 +61,37 @@ export type DiscoveryResult =
 export interface DiscoverOptions {
   page: Page;
   goal: string;
+  /**
+   * The capability this run records, named by the caller.
+   *
+   * Required, and deliberately not derived from `goal`. It used to be
+   * `slug(goal).slice(0, 48)`, which made the id a function of prose: three
+   * materially different goals —
+   *
+   *   "…the accounts overview, then open that account's activity page and
+   *    narrow the transaction list to debits only."
+   *   "…the account summary and log out."
+   *   "…the accounts overview and stop."
+   *
+   * — all begin "Record the first account number listed in the ac", all
+   * truncate to one id, and with `version` hardcoded to 1 all three write
+   * `capabilities/<product>/<that id>/1.0.0.json`. `saveArtifact` overwrites a
+   * draft by design, so the second recording silently destroyed the first.
+   * The same slug also collapsed every goal with no ASCII letters onto the
+   * literal id `"capability"`.
+   *
+   * The failure runs in both directions and the derived id gets both wrong:
+   * rewording a goal forks a new capability, and rewording the *tail* of a
+   * long goal keeps the old one and overwrites it. An id is an identity
+   * decision — this recording either is or is not a new version of that
+   * capability — and nothing about a sentence of prose answers it. So the
+   * caller answers it, once, and the store's path is a function of that answer
+   * rather than of how the goal happened to be phrased.
+   *
+   * Shape-checked below before the run starts, because it becomes a path
+   * segment in the capability store.
+   */
+  capabilityId: string;
   driver: ModelDriver;
   policy: PolicyConfig;
   log: RunLogger;
@@ -112,6 +143,17 @@ const SETTLE_BUDGET_MS = 5_000;
  * `"` in it would end the attribute selector and start something else.
  */
 const HANDLE_SHAPE = /^[A-Za-z0-9]+$/;
+
+/**
+ * A capability id as the store can hold one: it becomes a directory name
+ * under `capabilities/<product>/`, so it is checked before the run starts
+ * rather than discovered to be unwritable after a paid run has finished.
+ *
+ * Anchored, with no `/` and no leading `.`, so it cannot walk out of the
+ * store. That is a side benefit; the reason it is checked at all is that a
+ * caller now supplies it and a supplied value is the one place a typo lands.
+ */
+const CAPABILITY_ID_SHAPE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 function handleLocator(page: Page, handle: string): Locator | null {
   if (!HANDLE_SHAPE.test(handle)) return null;
@@ -366,7 +408,15 @@ class ArtifactRecorder {
  *     nothing and every recorded flow would end one step short.
  */
 export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> {
-  const { page, goal, driver, policy, log, budget } = opts;
+  const { page, goal, capabilityId, driver, policy, log, budget } = opts;
+  if (!CAPABILITY_ID_SHAPE.test(capabilityId)) {
+    throw new Error(
+      `discover: capabilityId "${capabilityId}" is not a usable capability id ` +
+        `(lowercase letters, digits, "_", "-" and ".", starting with a letter or digit, at most 64 characters). ` +
+        `It names a directory in the capability store and is the identity every later version of this ` +
+        `capability is recorded under.`,
+    );
+  }
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
   const wallClockMs = opts.wallClockMs ?? DEFAULT_WALL_CLOCK_MS;
   const now = opts.now ?? Date.now;
@@ -567,7 +617,7 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
         }
 
         const artifact = recorder.finish({
-          id: slug(goal) || "capability",
+          id: capabilityId,
           product: opts.product ?? productFrom(observation.url),
           goal,
           entryUrl,

@@ -28,6 +28,7 @@ import {
 } from "../../src/discover/driver.js";
 import { Budget } from "../../src/discover/budget.js";
 import type { PolicyConfig } from "../../src/policy/gate.js";
+import { artifactPath } from "../../src/artifact/store.js";
 import { HandleScript, StubLogger, type ScriptedCall } from "../support/stubs.js";
 
 const ORIGIN = "http://target.invalid";
@@ -106,6 +107,11 @@ const RATE = { inPerM: 2, outPerM: 10 } as const;
 
 const GOAL = "reach the accounts overview";
 
+/**
+ * Supplied per run, never derived from `GOAL` — see `DiscoverOptions.capabilityId`.
+ */
+const CAPABILITY_ID = "accounts-overview";
+
 let browser: Browser;
 let page: Page;
 
@@ -147,13 +153,16 @@ interface Overrides {
   now?: () => number;
   /** Defaults to the shared page, which `beforeEach` puts on `INDEX`. */
   page?: Page;
+  capabilityId?: string;
+  goal?: string;
 }
 
 async function run(o: Overrides): Promise<{ res: DiscoveryResult; log: StubLogger }> {
   const log = new StubLogger();
   const res = await discover({
     page: o.page ?? page,
-    goal: GOAL,
+    goal: o.goal ?? GOAL,
+    capabilityId: o.capabilityId ?? CAPABILITY_ID,
     driver: o.driver,
     policy: o.policy ?? CFG,
     log: log.asLogger(),
@@ -367,6 +376,64 @@ describe("discover — an artifact has to say where it starts, and where it went
     } finally {
       await blank.close();
     }
+  });
+});
+
+describe("discover — the capability is named by the caller, not by its goal", () => {
+  // The id was `slug(goal).slice(0, 48)`. `version` is hardcoded to 1 and
+  // `saveArtifact` overwrites a draft by design, so two goals whose first 48
+  // slug characters agree wrote the same file and the second recording
+  // silently destroyed the first. Nothing warned, and nothing could: by the
+  // time the store saw them they were the same capability.
+
+  const script = (): HandleScript =>
+    new HandleScript([
+      [{ name: "click", input: { handle: "@Accounts Overview" } }],
+      [{ name: "done", input: { checkpoint: "@Home" } }],
+    ]);
+
+  it("keeps two goals that slug to the same 48 characters on two different files", async () => {
+    // Verbatim from the review. Everything up to "the ac" is shared, which is
+    // all of the 48 characters the old id kept.
+    const GOAL_A =
+      "Record the first account number listed in the accounts overview, then open that account's activity page and narrow the transaction list to debits only.";
+    const GOAL_B = "Record the first account number listed in the account summary and log out.";
+
+    const slugPrefix = (g: string): string =>
+      g.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48);
+    // The premise, asserted rather than assumed: these two goals are
+    // indistinguishable to the id the loop used to derive.
+    expect(slugPrefix(GOAL_A)).toBe(slugPrefix(GOAL_B));
+
+    const a = await run({ driver: script(), goal: GOAL_A, capabilityId: "account-activity-debits" });
+    await page.goto(INDEX);
+    const b = await run({ driver: script(), goal: GOAL_B, capabilityId: "account-summary-logout" });
+
+    if (a.res.status !== "recorded" || b.res.status !== "recorded") throw new Error("expected two recordings");
+    expect(a.res.artifact.capability.id).toBe("account-activity-debits");
+    expect(b.res.artifact.capability.id).toBe("account-summary-logout");
+
+    // Which is the property that actually matters: two files, not one file
+    // written twice.
+    expect(artifactPath("/store", a.res.artifact)).not.toBe(artifactPath("/store", b.res.artifact));
+
+    // And the goal is still recorded — supplying the id replaces the id, not
+    // the record of what the run was for.
+    expect(a.res.artifact.capability.goal).toBe(GOAL_A);
+  });
+
+  it("refuses an id it could not safely make a directory of, before spending anything", async () => {
+    // The id becomes a path segment under `capabilities/<product>/`. A caller
+    // supplies it now, so a caller is where a typo — or a `../..` — arrives.
+    // Checked before the first turn, so a bad id costs no money and no
+    // actions on the page.
+    const driver = script();
+    for (const bad of ["", "../..", "Account Activity", "9".repeat(65), "-leading-dash".toUpperCase()]) {
+      await expect(run({ driver, capabilityId: bad })).rejects.toThrow(/capabilityId/);
+    }
+    // Nothing was asked of the driver and nothing happened on the page.
+    expect(driver.seen).toHaveLength(0);
+    expect(page.url()).toBe(INDEX);
   });
 });
 
@@ -604,6 +671,7 @@ describe("discover — a broken harness and a broken model are different failure
     const thrown: unknown = await discover({
       page,
       goal: GOAL,
+      capabilityId: CAPABILITY_ID,
       driver,
       policy: CFG,
       log: log.asLogger(),
