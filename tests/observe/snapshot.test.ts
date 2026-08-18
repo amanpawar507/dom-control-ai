@@ -174,7 +174,9 @@ describe("observe", () => {
   // These pin the boundary, so a fifth consumer inherits the property instead
   // of having to remember it.
   describe("a control's contents stop at perception", () => {
-    const SECRET = "hunter2-the-password";
+    // Synthetic, and named so it cannot be mistaken for one: this is a canary
+    // for a leak path, not a credential for anything.
+    const SECRET = "SYNTHETICTYPEDVALUE000000";
 
     async function withInput(value: string): Promise<{ digest: string | null; blob: string }> {
       const scratch = await browser.newPage();

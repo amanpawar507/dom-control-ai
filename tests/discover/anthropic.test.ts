@@ -197,7 +197,9 @@ describe("buildRequest — what the model is given", () => {
     // (`observe()` carries a digest, not the text — see
     // tests/observe/snapshot.test.ts), so this drives the argument-echo half
     // directly and checks the whole rendered request either way.
-    const SECRET = "hunter2-the-password";
+    // Synthetic, and named so it cannot be mistaken for one: this is a canary
+    // for a leak path, not a credential for anything.
+    const SECRET = "SYNTHETICTYPEDVALUE000000";
     const req = buildRequest({
       goal: "log in",
       observation: obsWithNodes,
