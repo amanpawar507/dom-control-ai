@@ -33,6 +33,16 @@ import { parseToolCall, type ToolCall } from "./tools.js";
  *    happened; what cannot happen is recording a flow step naming a control
  *    with no binding. Spec §6 forbids a partial artifact, so the whole run
  *    escalates rather than emitting a flow with a hole in it.
+ *  - `action-failed` — the gate allowed it, the control was proven, and the
+ *    page refused anyway: the element went detached between proving and
+ *    clicking, something covered it, the click timed out. Every other failure
+ *    here is classified; unwrapped, an action throws straight past every
+ *    stopping condition the loop defines and a caller gets an exception with
+ *    no `StopReason`, no `discover.escalated` line and no intervention — spec
+ *    §6's "discovery never fails silently", failing silently. Separate from
+ *    `control-unprovable` because that one means the element could not be
+ *    *named*; this means it could not be *acted on*, and an operator triaging
+ *    the two does different things.
  *  - `entry-url-unknown` — the goal was reached, but the run never stood on a
  *    page a replay could be told to open: it started on `about:blank` (a
  *    fresh Playwright page does) and never navigated anywhere. The same
@@ -52,7 +62,8 @@ export type StopReason =
   | "checkpoint-unverified"
   | "model-output-unusable"
   | "control-unprovable"
-  | "entry-url-unknown";
+  | "entry-url-unknown"
+  | "action-failed";
 
 export type DiscoveryResult =
   | { status: "recorded"; artifact: CapabilityArtifact; steps: number }
@@ -108,6 +119,8 @@ export interface DiscoverOptions {
    * slept to trip a timeout would be violating the rule it exists to check.
    */
   now?: () => number;
+  /** Per-action ceiling. Default 10s — see `DEFAULT_ACTION_BUDGET_MS`. */
+  actionBudgetMs?: number;
   /** Artifact identity. Defaults are derived from the page rather than invented. */
   product?: string;
   tenant?: string;
@@ -135,6 +148,20 @@ const DEAD_END_LIMIT = 3;
  * turns running, a false dead end.
  */
 const SETTLE_BUDGET_MS = 5_000;
+
+/**
+ * How long a single action may take before it is called a failure.
+ *
+ * Playwright's default is 30s and applies per action, so a loop at the default
+ * 40 steps could spend twenty minutes inside `click()` alone and sail past a
+ * ten-minute wall-clock budget that only gets consulted between turns. §7's
+ * fourth resolution rule is "condition-based waits with explicit budgets"; an
+ * unbounded action is neither.
+ *
+ * Overridable so a test can prove the failure path in half a second rather
+ * than waiting out a real one.
+ */
+const DEFAULT_ACTION_BUDGET_MS = 10_000;
 
 /**
  * A handle as `observe()` mints them: `o<epoch>n<index>`, alphanumeric and
@@ -419,6 +446,7 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
   }
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
   const wallClockMs = opts.wallClockMs ?? DEFAULT_WALL_CLOCK_MS;
+  const actionBudgetMs = opts.actionBudgetMs ?? DEFAULT_ACTION_BUDGET_MS;
   const now = opts.now ?? Date.now;
   const startedAt = now();
 
@@ -659,19 +687,23 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
         return halt("control-unprovable", { detail: (thrown as Error).message, tool: call.name });
       }
 
-      switch (call.name) {
+      // The page gets to refuse. Wrapped so a detached element, an intercepted
+      // click or a timeout becomes a classified halt rather than an exception
+      // thrown past every stopping condition below.
+      try {
+        switch (call.name) {
         case "click":
-          await loc.click();
+          await loc.click({ timeout: actionBudgetMs });
           recorder.step({ kind: "act", action: "click", control });
           lastTurnActed = true;
           break;
         case "fill":
-          await loc.fill(call.input.value);
+          await loc.fill(call.input.value, { timeout: actionBudgetMs });
           recorder.step({ kind: "act", action: "fill", control, value: recorder.parameter(control) });
           lastTurnActed = true;
           break;
         case "select":
-          await loc.selectOption(call.input.value);
+          await loc.selectOption(call.input.value, { timeout: actionBudgetMs });
           recorder.step({ kind: "act", action: "select", control, value: recorder.parameter(control) });
           lastTurnActed = true;
           break;
@@ -682,6 +714,9 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
           recorder.step({ kind: "extract", control, as: call.input.as });
           recorder.output(call.input.as);
           break;
+        }
+      } catch (thrown) {
+        return halt("action-failed", { detail: (thrown as Error).message, tool: call.name, control });
       }
       // `extract` is the one branch that does not set `lastTurnActed`.
       if (call.name !== "extract") {

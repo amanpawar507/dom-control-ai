@@ -74,6 +74,15 @@ const PAGES: Record<string, string> = {
   // the shape ParaBank's own findtrans page has. Every other page here is
   // marked up so proving always succeeds, which is why `control-unprovable`
   // had no scenario until this one existed.
+  // A control the gate allows and `proveControl` can name, that the page then
+  // refuses to let anyone click. Disabled rather than covered, because
+  // Playwright's actionability check fails on it deterministically.
+  "/parabank/stuck-control.htm": `<!doctype html>
+<html><head><title>ParaBank | Stuck</title></head>
+<body>
+  <a href="/parabank/index.htm" data-testid="nav-home">Home</a>
+  <button data-testid="wont-click" disabled>Immovable</button>
+</body></html>`,
   "/parabank/ambiguous.htm": `<!doctype html>
 <html><head><title>ParaBank | Find</title></head>
 <body>
@@ -150,6 +159,7 @@ interface Overrides {
   maxSteps?: number;
   wallClockMs?: number;
   now?: () => number;
+  actionBudgetMs?: number;
   /** Defaults to the shared page, which `beforeEach` puts on `INDEX`. */
   page?: Page;
   capabilityId?: string;
@@ -169,6 +179,7 @@ async function run(o: Overrides): Promise<{ res: DiscoveryResult; log: StubLogge
     ...(o.maxSteps === undefined ? {} : { maxSteps: o.maxSteps }),
     ...(o.wallClockMs === undefined ? {} : { wallClockMs: o.wallClockMs }),
     ...(o.now === undefined ? {} : { now: o.now }),
+    ...(o.actionBudgetMs === undefined ? {} : { actionBudgetMs: o.actionBudgetMs }),
   });
   return { res, log };
 }
@@ -724,6 +735,20 @@ describe("discover — never a partial artifact", () => {
   // a happy-path negation never visits.
   const scenarios: Array<[StopReason, () => Overrides]> = [
     [
+      // The gate allows it, `proveControl` names it, and the page refuses the
+      // click anyway. Unwrapped, this threw straight past every stopping
+      // condition and out of `discover()` — an exception carrying no
+      // `StopReason`, no escalation line and no intervention.
+      "action-failed",
+      () => ({
+        driver: new HandleScript([
+          [{ name: "navigate", input: { url: `${ORIGIN}/parabank/stuck-control.htm` } }],
+          [{ name: "click", input: { handle: "@Immovable" } }],
+        ]),
+        actionBudgetMs: 500,
+      }),
+    ],
+    [
       // `done` naming one of four identically-named buttons on a page with no
       // test ids: every candidate strategy resolves ambiguously, so
       // `proveControl` throws rather than emit a binding that would resolve to
@@ -839,17 +864,34 @@ describe("discover — never a partial artifact", () => {
     // real, unmarked ParaBank markup in tests/artifact/prove.test.ts, which
     // pins the throw this reason reports.
     const covered = new Set(scenarios.map(([reason]) => reason));
-    const all: StopReason[] = [
-      "max-steps",
-      "wall-clock",
-      "dead-end",
-      "model-stuck",
-      "policy-refusal",
-      "budget-exceeded",
-      "checkpoint-unverified",
-      "model-output-unusable",
-      "control-unprovable",
-    ];
+    // Exhaustive by construction. A `Record` keyed on the union means adding a
+    // `StopReason` without classifying it here is a COMPILE error, not a
+    // quietly-stale list — which is what this was: `entry-url-unknown` was
+    // added in a later round and never appeared below, while the test went on
+    // reporting full coverage.
+    //
+    // `true` means "this table drives it". `false` means "reached by a
+    // dedicated test elsewhere, because the table's shared harness cannot
+    // produce it" — and each of those names where.
+    const classified: Record<StopReason, boolean> = {
+      "max-steps": true,
+      "wall-clock": true,
+      "dead-end": true,
+      "model-stuck": true,
+      "policy-refusal": true,
+      "budget-exceeded": true,
+      "checkpoint-unverified": true,
+      "model-output-unusable": true,
+      "control-unprovable": true,
+      "action-failed": true,
+      // Needs a run that starts on about:blank and never navigates; this
+      // harness always opens INDEX first. See "refuses to record an artifact
+      // when the run never stood on a page a replay could open".
+      "entry-url-unknown": false,
+    };
+    const all = Object.entries(classified)
+      .filter(([, viaTable]) => viaTable)
+      .map(([reason]) => reason as StopReason);
     expect(all.filter((r) => !covered.has(r))).toEqual([]);
   });
 });
