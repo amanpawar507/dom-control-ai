@@ -31,43 +31,54 @@ describe("policy is decided in exactly one place", () => {
   });
 
   it("every module that performs an action also calls that gate", () => {
-    // A module that drives Playwright — click, fill, selectOption, goto — and
-    // never calls `gate` is a path that acts without a verdict. `prove.ts` and
-    // `snapshot.ts` read the page without acting on it, so they are exempt.
-    // No leading \b. It looks harmless and silently defeats the whole check:
-    // `\b` before `\.` demands a word character immediately before the dot, so
-    // `loc.click(` matches while `page.locator(sel).click(` does not — and a
-    // chained call is how most of this code is written. Verified by mutation:
-    // with the boundary in place, a module doing exactly that slipped past.
-    const ACTS = /(?:\.click\(|\.fill\(|\.selectOption\(|\.goto\()/;
-    const EXEMPT = new Set(["src/artifact/prove.ts", "src/observe/snapshot.ts", "src/session/playwright-state.ts"]);
+    // A module that drives the page and never calls `gate` is a path that acts
+    // without a verdict. `prove.ts`, `snapshot.ts` and the session provider
+    // read or authenticate rather than act on the model's behalf, so they are
+    // exempt — named individually, because an exemption pattern would quietly
+    // grow to cover the next offender.
+    //
+    // Two things this got wrong the first time, both worth stating because
+    // both made it report safety it was not providing:
+    //
+    // The verb list was four entries. `.press(`, `.check(`, `.uncheck(`,
+    // `.dispatchEvent(`, `.setInputFiles(`, `.goBack(` and `keyboard.type` all
+    // drive a page and all sailed past.
+    //
+    // And it searched raw source for `gate(`, so the word appearing in a
+    // *comment* satisfied it. Comments are stripped first; a module now has to
+    // actually call it.
+    const ACTS =
+      /(?:\.click\(|\.fill\(|\.selectOption\(|\.goto\(|\.press\(|\.check\(|\.uncheck\(|\.dispatchEvent\(|\.setInputFiles\(|\.goBack\(|\.goForward\(|keyboard\.type\()/;
+    const EXEMPT = new Set([
+      "src/artifact/prove.ts",
+      "src/observe/snapshot.ts",
+      "src/session/playwright-state.ts",
+    ]);
+    const stripComments = (s: string): string =>
+      s.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+
     const ungated = walk(SRC).filter((f) => {
       if (EXEMPT.has(f)) return false;
-      const s = readFileSync(f, "utf8");
-      return ACTS.test(s) && !/\bgate\(/.test(s);
+      const code = stripComments(readFileSync(f, "utf8"));
+      return ACTS.test(code) && !/\bgate\(/.test(code);
     });
     expect(ungated).toEqual([]);
   });
 
-  it("both act paths reach the same verdict from the same inputs", () => {
-    // The two paths build a GateRequest differently — the loop from the page's
-    // current url and the names it computed, WebActor from the element it
-    // resolved. Given identical inputs they must agree, or "one place to audit"
-    // is a sentence rather than a property.
-    const cfg: PolicyConfig = {
-      allowlist: { origins: ["http://x"], paths: ["/a/**"], actions: ["click", "navigate"] },
-      riskRules: [{ tier: "irreversible", matchControl: "^Clean$" }],
-      approved: false,
-    } as PolicyConfig;
-
-    for (const req of [
-      { url: "http://x/a/p", action: "click" as const, controlNames: ["Clean"] },
-      { url: "http://x/a/p", action: "click" as const, controlNames: ["Save"] },
-      { url: "http://elsewhere/a/p", action: "navigate" as const, controlNames: [] },
-    ]) {
-      const first = gate(cfg, req);
-      const second = gate(cfg, req);
-      expect(second).toEqual(first);
+  it("exempts only modules that genuinely do not act for the model", () => {
+    // The exemption list above is the guard's one soft spot: anything added to
+    // it stops being checked. This pins *why* each entry is there, so removing
+    // a module's read-only character without removing its exemption is caught.
+    //
+    // What replaced the test that used to sit here: it called `gate` twice with
+    // the same argument and asserted the results matched, which is true of any
+    // pure function and exercised neither act path. A tautology in a file whose
+    // subject is "prove the safety property" is worse than a gap, because it
+    // reads as coverage.
+    const forbidden = /(?:\.click\(|\.fill\(|\.selectOption\(|\.press\()/;
+    for (const f of ["src/artifact/prove.ts", "src/observe/snapshot.ts"]) {
+      const code = readFileSync(f, "utf8");
+      expect(forbidden.test(code), `${f} is exempt but now acts on the page`).toBe(false);
     }
   });
 });

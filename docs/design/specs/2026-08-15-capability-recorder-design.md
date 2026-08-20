@@ -88,7 +88,7 @@ src/
   surface/          THE SURFACE SEAM
     types.ts          Surface = { observe(), act(), resolve() }
     playwright-web/
-      observer.ts     ARIA snapshot + visibility + geometry + screenshot
+      observer.ts     ARIA snapshot + visibility + geometry
       resolver.ts     binding chain -> element          (replay only)
       actor.ts        dispatch primitive actions
 
@@ -349,7 +349,15 @@ tasks be built and tested for nothing. We call `messages.create` per turn.)*
 
 | Tool | Purpose |
 |---|---|
-| `observe` | Return the current semantic snapshot and screenshot |
+| `observe` | Return the current semantic snapshot |
+
+*(Revised: `observe` took a `screenshot` flag, the loop discarded it, and no
+screenshot was ever taken — the model was offered a parameter that did nothing.
+Removed rather than implemented, because a screenshot lets the model **see**
+page content but not **address** it: handles are minted for controls only, so a
+model could read a balance off an image and still have no handle to `extract`
+it. It returns when content nodes get handles, which is the same change that
+lets a checkpoint certify an outcome rather than an element's existence.)*
 | `click` · `fill` · `select` · `navigate` | Act on a handle from the last observation |
 | `extract` | Mark a value as a declared output |
 | `done` | Assert the goal is met, naming the checkpoint that proves it |
@@ -407,7 +415,8 @@ never fails silently and never records a partial artifact.
 ### Perception
 
 The observation given to the model is a compact semantic snapshot plus a
-screenshot, with each node addressed by an opaque handle.
+semantic snapshot, with each node addressed by an opaque handle. No screenshot
+— see the note on the tool table in §6.
 
 Note that in a browser the accessibility tree is *derived from the DOM* — on a
 legacy application it is exactly as impoverished as the markup. It is used for
@@ -513,7 +522,9 @@ is how determinism is evidenced rather than asserted.
 | Step marked `risk: "irreversible"` | Both |
 
 **Route.** An intervention record carries the capability or goal, the step,
-the reason, the current ARIA snapshot, and a screenshot.
+the reason and the current ARIA snapshot. (An escalation is the one place a
+screenshot would earn its cost, since a human is about to look at it — not yet
+built; see §6.)
 
 **Transfer.** A lease — a single `controller: "automation" | "human"` value.
 Automation awaits the lease rather than acting. The browser is headed and
@@ -538,8 +549,18 @@ screen is not.
 ## 9. Safety
 
 **Allowlist** of origins, path patterns, and action types, enforced inside
-`executor.dispatch`. Every engine passes through it; there is one place to audit
-and no way around it.
+`gate()` in `policy/gate.ts`. *(Revised after implementation: this named
+`executor.dispatch`, an identifier that exists nowhere in the tree.)*
+
+There are two **act** paths — discovery addresses an element by the observation
+handle the model was given, replay by a proven binding — and that is correct:
+those namespaces are deliberately separate, because a handle is valid only for
+the observation that minted it. What the claim requires is narrower and does
+hold: one **decision** function, called by every path that acts. The failure
+mode is not two act paths; it is a third added later that decides for itself,
+so the property is pinned by test rather than asserted here — exactly one `gate`
+implementation, no module that drives the page without calling it, and an
+exemption list that has to justify itself.
 
 **Risk tiers.**
 
@@ -591,7 +612,7 @@ UI-specific.
 ### Evidence
 
 `evidence/<runId>/` contains a JSONL structured log, a per-step ARIA snapshot and
-screenshot, resolved-tier telemetry, and the final artifact or result. Failures
+resolved-tier telemetry, and the final artifact or result. Failures
 capture additional context. Discovery logs record the model's stated reason for
 each action alongside the action itself — the "what and why" — which requires
 requesting summarized thinking explicitly, since the default omits it.

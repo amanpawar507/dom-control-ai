@@ -43,3 +43,9 @@ evidence/*
 
 # SDD scratch workspace
 .superpowers/
+
+# Screen recordings of runs. Kept out of git deliberately: they are large
+# binaries, and more to the point nobody can review one by reading a diff. A
+# recording of a live session is exactly the artifact that should not reach a
+# public repository unwatched.
+docs/demo/
