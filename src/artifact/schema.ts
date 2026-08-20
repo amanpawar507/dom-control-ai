@@ -127,10 +127,36 @@ const ActStepSchema = z.discriminatedUnion("action", [
     .strict(),
 ]);
 
+/**
+ * What the run verified, so a replay can verify the same thing.
+ *
+ * `state` is spec §4's mandatory field and was missing: the artifact named a
+ * control and said nothing about what was true of it, leaving a replay engine
+ * to invent its own criterion — or, worse, to check nothing and call that
+ * agreement.
+ *
+ * `"visible"` is the only value the recorder can produce, and that is a
+ * statement about `checkpointHolds`, not a placeholder: the loop verifies
+ * exactly one *rendered* match and nothing else, so it is the only claim
+ * discovery is entitled to write down. A literal rather than an open string
+ * keeps it that way — a recorder that learns to verify more has to widen this
+ * type deliberately, and a replay reading an artifact will never meet a state
+ * nobody implemented.
+ *
+ * What this does NOT fix, stated plainly because encoding a field invites the
+ * belief that the problem is solved: a checkpoint asserting an element is
+ * visible holds whether or not the steps before it achieved anything. On a
+ * flow whose real success condition is "the list now shows debits only", the
+ * strongest checkpoint available is the dropdown that was set — which is
+ * visible either way. Certifying an *outcome* needs an expected value, and an
+ * expected value needs an observer that can see rendered content rather than
+ * only controls. See §6.
+ */
 const CheckpointStepSchema = z
   .object({
     kind: z.literal("checkpoint"),
     control: z.string(),
+    state: z.literal("visible"),
   })
   .strict();
 

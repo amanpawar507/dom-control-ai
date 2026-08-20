@@ -26,7 +26,7 @@ const valid = {
     steps: [
       { kind: "act", action: "fill", control: "txn_id", value: "$transactionId" },
       { kind: "act", action: "click", control: "find_btn" },
-      { kind: "checkpoint", control: "results_heading" },
+      { kind: "checkpoint", control: "results_heading", state: "visible" },
       { kind: "extract", control: "amount_cell", as: "amount" },
     ],
   },
@@ -119,6 +119,25 @@ describe("artifact schema", () => {
     const parsed = parseArtifact(structuredClone(valid));
     expect(parsed.bindings.entryUrl).toBe("http://localhost:8081/parabank/index.htm");
     expect(parsed.capability).not.toHaveProperty("entryUrl");
+  });
+
+  it("rejects a checkpoint that does not say what it verified", () => {
+    // Spec §4 makes `state` mandatory. Without it an artifact names a control
+    // and says nothing about what was true of it, leaving a replay engine to
+    // invent a criterion — or to check nothing and call that agreement.
+    const broken = structuredClone(valid) as Record<string, any>;
+    for (const s of broken["flow"].steps) if (s.kind === "checkpoint") delete s.state;
+    expect(() => parseArtifact(broken)).toThrow();
+  });
+
+  it("accepts only a state the recorder can actually produce", () => {
+    // `visible` is not a placeholder: the loop verifies exactly one rendered
+    // match and nothing else, so it is the only claim discovery is entitled to
+    // write down. A literal keeps a replay from meeting a state nobody
+    // implemented.
+    const broken = structuredClone(valid) as Record<string, any>;
+    for (const s of broken["flow"].steps) if (s.kind === "checkpoint") s.state = "settled";
+    expect(() => parseArtifact(broken)).toThrow();
   });
 
   it("rejects status outside the declared lifecycle", () => {

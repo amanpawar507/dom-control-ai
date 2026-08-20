@@ -633,7 +633,7 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
         } catch (thrown) {
           return halt("control-unprovable", { detail: (thrown as Error).message, control: "checkpoint" });
         }
-        recorder.step({ kind: "checkpoint", control });
+        recorder.step({ kind: "checkpoint", control, state: "visible" });
 
         // The goal was reached on a page nobody can be told to open — the run
         // started on `about:blank` and never navigated. Escalate rather than
