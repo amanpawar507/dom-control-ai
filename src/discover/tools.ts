@@ -60,15 +60,27 @@ const ExtractInput = z
   .strict();
 
 /**
- * No handle, no selector — this asks for a fresh snapshot of the page
- * rather than acting on anything already on it. `screenshot` mirrors
- * `observe()`'s own opt-in image flag (src/observe/snapshot.ts).
+ * No handle, no selector — this asks for a fresh snapshot of the page rather
+ * than acting on anything already on it. No parameters either.
+ *
+ * It advertised a `screenshot` flag until the loop was audited and found to
+ * discard it: no screenshot was taken anywhere, so the model was being offered
+ * a parameter that did nothing. Removed rather than implemented, and the
+ * reasoning is worth keeping because the obvious fix is the wrong one.
+ *
+ * `observe()` can produce an image, and a screenshot would let the model *see*
+ * page content — balances in bare table cells, an error banner in an unroled
+ * div — which is the sharpest limitation in this phase. But it could not
+ * *address* any of it: handles are minted for controls only, so a model could
+ * read a balance off an image and still have no handle to `extract` it. The
+ * flag would buy better decisions and no new capability, at roughly 1,400
+ * tokens per turn against a budget measured in cents.
+ *
+ * It belongs back here when content nodes get handles, which is the same
+ * change that makes a checkpoint able to certify an outcome. Until then, an
+ * absent tool is honest and a no-op tool is not.
  */
-const ObserveInput = z
-  .object({
-    screenshot: z.boolean().optional(),
-  })
-  .strict();
+const ObserveInput = z.object({}).strict();
 
 /**
  * "done" without a checkpoint is a model asserting success with nothing to

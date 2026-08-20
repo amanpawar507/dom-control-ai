@@ -39,6 +39,16 @@ describe("tool vocabulary", () => {
     expect(() => parseToolCall("select", { handle: "n1", value: "USD" })).not.toThrow();
   });
 
+  it("offers observe no parameters, rather than one that does nothing", () => {
+    // It advertised `screenshot` while the loop discarded it and nothing ever
+    // took one. A tool parameter the model can set and the system ignores is a
+    // lie told to the only reader that cannot check.
+    expect(() => parseToolCall("observe", {})).not.toThrow();
+    expect(() => parseToolCall("observe", { screenshot: true })).toThrow();
+    const observe = TOOL_SCHEMAS.find((s) => s.name === "observe")!;
+    expect(JSON.stringify(observe)).not.toContain("screenshot");
+  });
+
   it("throws on an unknown tool name", () => {
     expect(() => parseToolCall("delete_everything", {})).toThrow(/unknown tool/i);
   });
