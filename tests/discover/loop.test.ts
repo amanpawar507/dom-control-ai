@@ -130,6 +130,15 @@ let page: Page;
  * own page and give it the same routing.
  */
 const serve: Parameters<Page["route"]>[1] = async (route) => {
+  // This harness fulfils every request, so a "dead" host would still receive a
+  // 404 page and `goto` would succeed. A navigation failure has to be arranged
+  // rather than assumed — the first attempt at the test below used an
+  // unroutable port and the run simply carried on. This host is refused at the
+  // network, which is what a refused connection actually looks like.
+  if (new URL(route.request().url()).hostname === "refused.invalid") {
+    await route.abort("connectionrefused");
+    return;
+  }
   const body = PAGES[new URL(route.request().url()).pathname];
   await route.fulfill(
     body === undefined
@@ -893,5 +902,48 @@ describe("discover — never a partial artifact", () => {
       .filter(([, viaTable]) => viaTable)
       .map(([reason]) => reason as StopReason);
     expect(all.filter((r) => !covered.has(r))).toEqual([]);
+  });
+
+  it("classifies a navigation the network refuses, on its own page", async () => {
+    // `goto` was wrapped a round after click/fill/select and had exactly their
+    // old failure: a refused connection threw past every stopping condition,
+    // out of `discover()`, with no StopReason and no escalation line.
+    //
+    // Its own page, deliberately. Aborting a navigation leaves Playwright
+    // believing one is in flight, and on the shared page that surfaces as
+    // "interrupted by another navigation" in whichever test runs next — a
+    // failure with no relationship to its cause. Real runs never meet this
+    // because the caller closes the page after a halt.
+    const own = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    try {
+      await own.route("**/*", async (route) => {
+        if (new URL(route.request().url()).hostname === "refused.invalid") {
+          await route.abort("connectionrefused");
+          return;
+        }
+        await serve(route, route.request());
+      });
+      await own.goto(INDEX);
+
+      const log = new StubLogger();
+      const res = await discover({
+        page: own,
+        goal: GOAL,
+        capabilityId: "nav-failure",
+        driver: new HandleScript([
+          [{ name: "navigate", input: { url: "http://refused.invalid/parabank/x.htm" } }],
+        ]),
+        policy: { ...CFG, allowlist: { ...CFG.allowlist, origins: [ORIGIN, "http://refused.invalid"] } },
+        log: log.asLogger(),
+        budget: new Budget(1, RATE),
+        actionBudgetMs: 500,
+      });
+
+      expect(res).toMatchObject({ status: "escalated", reason: "action-failed" });
+      expect(res).not.toHaveProperty("artifact");
+      expect(log.kinds).toContain("discover.escalated");
+    } finally {
+      await own.close();
+    }
   });
 });

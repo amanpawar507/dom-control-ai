@@ -583,7 +583,17 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
         const verdict = gate(policy, { url: call.input.url, action: "navigate", controlNames: [] });
         log.log({ kind: "discover.gate", tool: "navigate", url: call.input.url, verdict });
         if (verdict.decision !== "allow") return halt("policy-refusal", { verdict });
-        await page.goto(call.input.url);
+        // Same reasoning as the action switch below: a navigation the network
+        // refuses is a classified halt, not an exception thrown past every
+        // stopping condition. A dead host, a refused connection or a slow page
+        // all arrive here — and `goto` carries Playwright's 30s default unless
+        // given a budget, long enough for a 40-step run to outlive a ten-minute
+        // wall-clock stop that is only consulted between turns.
+        try {
+          await page.goto(call.input.url, { timeout: actionBudgetMs });
+        } catch (thrown) {
+          return halt("action-failed", { detail: (thrown as Error).message, tool: "navigate" });
+        }
         await settle(page);
         lastTurnActed = true;
 

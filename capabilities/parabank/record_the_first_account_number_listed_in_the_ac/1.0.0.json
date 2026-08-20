@@ -41,7 +41,8 @@
       },
       {
         "kind": "checkpoint",
-        "control": "combobox_all_credit_debit"
+        "control": "combobox_all_credit_debit",
+        "state": "visible"
       }
     ]
   },
