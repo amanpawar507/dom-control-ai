@@ -12,7 +12,6 @@ Back-office banking software has no API, a legacy UI, real error states, and man
 
 ▶ **[discovery-run.webm](docs/demo/discovery-run.webm)** — Claude Sonnet 5 driving a live ParaBank instance, addressing every element by opaque handle, five turns, ending in a proven artifact.
 
-*(Plays inline on the [walkthrough page](https://claude.ai/code/artifact/b633d72f-57ac-470a-9495-45b0930b272e), alongside what the recording can't show.)*
 
 The run cost **$0.031**. Every action passed a policy gate *before* it executed. Nothing in the recording is staged.
 
