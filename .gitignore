@@ -44,8 +44,8 @@ evidence/*
 # SDD scratch workspace
 .superpowers/
 
-# Screen recordings of runs. Kept out of git deliberately: they are large
-# binaries, and more to the point nobody can review one by reading a diff. A
-# recording of a live session is exactly the artifact that should not reach a
-# public repository unwatched.
-docs/demo/
+# Screen recordings of runs. `docs/demo/discovery-run.webm` is committed
+# deliberately as the project's one demonstration asset; further recordings are
+# scratch and stay out.
+docs/demo/*
+!docs/demo/discovery-run.webm
