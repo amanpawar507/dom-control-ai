@@ -43,3 +43,9 @@ evidence/*
 
 # SDD scratch workspace
 .superpowers/
+
+# Screen recordings of runs. `docs/demo/discovery-run.webm` is committed
+# deliberately as the project's one demonstration asset; further recordings are
+# scratch and stay out.
+docs/demo/*
+!docs/demo/discovery-run.webm

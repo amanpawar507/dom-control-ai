@@ -1,0 +1,967 @@
+{
+  "version": 1,
+  "turns": [
+    {
+      "observation": {
+        "url": "http://localhost:8081/parabank/overview.htm",
+        "title": "ParaBank | Accounts Overview",
+        "nodes": [
+          {
+            "role": "link",
+            "name": "About Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Services",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Products",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Locations",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Admin Page",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "home",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "about",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "contact",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Open New Account",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Accounts Overview",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Transfer Funds",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Bill Pay",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Find Transactions",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Update Contact Info",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Request Loan",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Log Out",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "12345",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "12456",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "12567",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "12678",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "12789",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "12900",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "13011",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "13122",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "13233",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "13344",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "54321",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Home",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "About Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Services",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Products",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Locations",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Forum",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Site Map",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Contact Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "www.parasoft.com",
+            "editable": false
+          }
+        ]
+      },
+      "response": {
+        "calls": [
+          {
+            "name": "extract",
+            "input": {
+              "handle": "o1n16",
+              "as": "first_account_number"
+            }
+          }
+        ]
+      },
+      "usage": {
+        "inputTokens": 2840,
+        "outputTokens": 63
+      }
+    },
+    {
+      "observation": {
+        "url": "http://localhost:8081/parabank/overview.htm",
+        "title": "ParaBank | Accounts Overview",
+        "nodes": [
+          {
+            "role": "link",
+            "name": "About Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Services",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Products",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Locations",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Admin Page",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "home",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "about",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "contact",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Open New Account",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Accounts Overview",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Transfer Funds",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Bill Pay",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Find Transactions",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Update Contact Info",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Request Loan",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Log Out",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "12345",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "12456",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "12567",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "12678",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "12789",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "12900",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "13011",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "13122",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "13233",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "13344",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "54321",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Home",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "About Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Services",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Products",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Locations",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Forum",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Site Map",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Contact Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "www.parasoft.com",
+            "editable": false
+          }
+        ]
+      },
+      "response": {
+        "calls": [
+          {
+            "name": "click",
+            "input": {
+              "handle": "o2n16"
+            }
+          }
+        ]
+      },
+      "usage": {
+        "inputTokens": 5714,
+        "outputTokens": 100
+      }
+    },
+    {
+      "observation": {
+        "url": "http://localhost:8081/parabank/activity.htm?id=12345",
+        "title": "ParaBank | Account Activity",
+        "nodes": [
+          {
+            "role": "link",
+            "name": "About Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Services",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Products",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Locations",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Admin Page",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "home",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "about",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "contact",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Open New Account",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Accounts Overview",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Transfer Funds",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Bill Pay",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Find Transactions",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Update Contact Info",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Request Loan",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Log Out",
+            "editable": false
+          },
+          {
+            "role": "combobox",
+            "name": "All January February March April May June July August September October November December",
+            "editable": true
+          },
+          {
+            "role": "combobox",
+            "name": "All Credit Debit",
+            "editable": true
+          },
+          {
+            "role": "button",
+            "name": "Go",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Home",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "About Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Services",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Products",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Locations",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Forum",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Site Map",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Contact Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "www.parasoft.com",
+            "editable": false
+          }
+        ]
+      },
+      "response": {
+        "calls": [
+          {
+            "name": "select",
+            "input": {
+              "handle": "o3n17",
+              "value": "<redacted>"
+            }
+          }
+        ]
+      },
+      "usage": {
+        "inputTokens": 8525,
+        "outputTokens": 160
+      }
+    },
+    {
+      "observation": {
+        "url": "http://localhost:8081/parabank/activity.htm?id=12345",
+        "title": "ParaBank | Account Activity",
+        "nodes": [
+          {
+            "role": "link",
+            "name": "About Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Services",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Products",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Locations",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Admin Page",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "home",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "about",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "contact",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Open New Account",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Accounts Overview",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Transfer Funds",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Bill Pay",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Find Transactions",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Update Contact Info",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Request Loan",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Log Out",
+            "editable": false
+          },
+          {
+            "role": "combobox",
+            "name": "All January February March April May June July August September October November December",
+            "editable": true
+          },
+          {
+            "role": "combobox",
+            "name": "All Credit Debit",
+            "editable": true
+          },
+          {
+            "role": "button",
+            "name": "Go",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Check # 1111",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Check # 1211",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Funds Transfer Sent",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Funds Transfer Sent",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Funds Transfer Sent",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Funds Transfer Sent",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Bill Payment to Bank of America Visa",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Home",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "About Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Services",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Products",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Locations",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Forum",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Site Map",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Contact Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "www.parasoft.com",
+            "editable": false
+          }
+        ]
+      },
+      "response": {
+        "calls": [
+          {
+            "name": "click",
+            "input": {
+              "handle": "o4n18"
+            }
+          }
+        ]
+      },
+      "usage": {
+        "inputTokens": 11487,
+        "outputTokens": 197
+      }
+    },
+    {
+      "observation": {
+        "url": "http://localhost:8081/parabank/activity.htm?id=12345",
+        "title": "ParaBank | Account Activity",
+        "nodes": [
+          {
+            "role": "link",
+            "name": "About Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Services",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Products",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Locations",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Admin Page",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "home",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "about",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "contact",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Open New Account",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Accounts Overview",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Transfer Funds",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Bill Pay",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Find Transactions",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Update Contact Info",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Request Loan",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Log Out",
+            "editable": false
+          },
+          {
+            "role": "combobox",
+            "name": "All January February March April May June July August September October November December",
+            "editable": true
+          },
+          {
+            "role": "combobox",
+            "name": "All Credit Debit",
+            "editable": true
+          },
+          {
+            "role": "button",
+            "name": "Go",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Check # 1111",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Check # 1211",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Funds Transfer Sent",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Funds Transfer Sent",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Funds Transfer Sent",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Funds Transfer Sent",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Bill Payment to Bank of America Visa",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Home",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "About Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Services",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Products",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Locations",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Forum",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Site Map",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "Contact Us",
+            "editable": false
+          },
+          {
+            "role": "link",
+            "name": "www.parasoft.com",
+            "editable": false
+          }
+        ]
+      },
+      "response": {
+        "calls": [
+          {
+            "name": "done",
+            "input": {
+              "checkpoint": "o5n17"
+            }
+          }
+        ]
+      },
+      "usage": {
+        "inputTokens": 14454,
+        "outputTokens": 237
+      }
+    }
+  ]
+}

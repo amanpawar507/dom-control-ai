@@ -2,14 +2,17 @@
   "name": "dom-control-ai",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "test": "vitest run --exclude 'tests/e2e/**'",
     "test:e2e": "vitest run tests/e2e",
     "target:up": "docker compose up -d",
     "target:down": "docker compose down",
     "target:wait": "node scripts/target-wait.mjs",
-    "smoke": "tsx scripts/phase1-smoke.mts"
+    "smoke": "tsx scripts/phase1-smoke.mts",
+    "discover": "tsx --env-file-if-exists=.env scripts/discover.mts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -18,6 +21,7 @@
     "vitest": "^3.2.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "playwright": "^1.56.0",
     "zod": "^4.0.0"
   }

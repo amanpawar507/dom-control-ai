@@ -113,6 +113,29 @@ export function controlNamesOf(el: Element): string[] {
 }
 
 /**
+ * Every name the element behind `loc` goes by, read off the page.
+ *
+ * Exported so the discovery loop (`src/discover/loop.ts`) can gate on what a
+ * control actually is without carrying its own copy of `controlNamesOf`. The
+ * `evaluate` call has to live *here*, in the same module as the function it
+ * serialises: `tests/surface/evaluate-serialisation.test.ts` resolves a bare
+ * identifier argument only against top-level declarations of the module the
+ * call site sits in, so `loc.evaluate(controlNamesOf)` written from another
+ * file is a callback the guard cannot read — and it fails closed on that,
+ * which is correct. One call site, one definition, both checked.
+ *
+ * The loop needs this rather than `ObservedNode.name` because the gate's risk
+ * classification is monotone in the name set: `observe()` computes one name by
+ * a first-match priority, while this returns every name the element answers
+ * to, and a rule written against any of them then fires. `<button
+ * title="Clean">Purge everything</button>` is the shape that distinguishes
+ * them, and it is the shape the irreversible rule exists for.
+ */
+export async function controlNamesFor(loc: Locator): Promise<string[]> {
+  return loc.evaluate(controlNamesOf, undefined, { timeout: NAME_BUDGET_MS });
+}
+
+/**
  * The single place where an intent becomes a real browser effect.
  *
  * Every path to a side effect runs `gate` first and throws on anything short of
@@ -207,8 +230,7 @@ export class WebActor {
       };
     }
 
-    const fromElement = await loc.evaluate(controlNamesOf, undefined, { timeout: NAME_BUDGET_MS });
-    const names = [...fromElement];
+    const names = [...(await controlNamesFor(loc))];
     if (claimed !== "" && !names.includes(claimed)) names.push(claimed);
     return { ok: true, names };
   }

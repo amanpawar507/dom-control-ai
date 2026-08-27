@@ -1,0 +1,111 @@
+{
+  "capability": {
+    "id": "record_the_first_account_number_listed_in_the_ac",
+    "product": "parabank",
+    "version": 1,
+    "goal": "Record the first account number listed in the accounts overview, then open that account's activity page and narrow the transaction list to debits only.",
+    "inputs": {
+      "combobox_all_credit_debit": {
+        "type": "string"
+      }
+    },
+    "outputs": {
+      "first_account_number": {
+        "type": "string"
+      }
+    },
+    "status": "draft"
+  },
+  "flow": {
+    "steps": [
+      {
+        "kind": "extract",
+        "control": "link_12345",
+        "as": "first_account_number"
+      },
+      {
+        "kind": "act",
+        "action": "click",
+        "control": "link_12345"
+      },
+      {
+        "kind": "act",
+        "action": "select",
+        "control": "combobox_all_credit_debit",
+        "value": "$combobox_all_credit_debit"
+      },
+      {
+        "kind": "act",
+        "action": "click",
+        "control": "button_go"
+      },
+      {
+        "kind": "checkpoint",
+        "control": "combobox_all_credit_debit",
+        "state": "visible"
+      }
+    ]
+  },
+  "bindings": {
+    "tenant": "local",
+    "variant": "baseline",
+    "entryUrl": "http://localhost:8081/parabank/overview.htm",
+    "controls": {
+      "link_12345": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 1,
+            "by": "role",
+            "role": "link",
+            "name": "12345"
+          }
+        ],
+        "fingerprint": {
+          "tag": "a"
+        }
+      },
+      "combobox_all_credit_debit": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 3,
+            "by": "anchor",
+            "anchorText": "Type:",
+            "rel": "nearest-right",
+            "accepts": [
+              "select"
+            ]
+          },
+          {
+            "tier": 2,
+            "by": "css",
+            "value": "select[name=\"transactionType\"]"
+          }
+        ],
+        "fingerprint": {
+          "tag": "select"
+        }
+      },
+      "button_go": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 1,
+            "by": "role",
+            "role": "button",
+            "name": "Go"
+          },
+          {
+            "tier": 2,
+            "by": "css",
+            "value": "input"
+          }
+        ],
+        "fingerprint": {
+          "tag": "input"
+        }
+      }
+    }
+  }
+}

@@ -12,7 +12,43 @@
      distance from the anchor is identical. "Nearest to the right" is not a total
      order here, so the resolver must refuse rather than tie-break.
      Row 2 — the ordinary case, two controls at genuinely different distances,
-     which must still resolve to the nearer one. -->
+     which must still resolve to the nearer one.
+     Row 3 — the `nearest-below` counterpart of row 1's tie: two controls
+     directly under the "Amount" anchor sharing the same `top` and `left`, so
+     neither their vertical gap nor their horizontal offset breaks the tie.
+     Row 4 — a candidate to the right of its anchor with real box area
+     (non-zero width/height) but `visibility:hidden`. Before tier 3 folded in
+     `isRenderedIn`'s semantics, its own gate only rejected zero-area elements,
+     so this element still qualified as a match — the same disagreement Task 1
+     closed for tiers 0-2 by way of `filterRendered`.
+     Row 5 — the `nearest-above` counterpart of row 1's tie, at its own `left`
+     column (550px) so it cannot be picked up as a distant, non-winning
+     candidate by any other row's anchor. Two controls directly above the
+     "Total" anchor share the same `top` and `left`, so neither ranking key
+     breaks the tie. `nearest-below`'s tie (row 3) shares its tie-break code
+     with `nearest-above`; without this row that sharing was verified only by
+     reading the source, not by anything that would go red if a future change
+     special-cased one branch and not the other.
+     Row 6 — `nearest-above` ranking, at its own `left` column (250px).
+     #sub-far sits a full row further from "Subtotal" than #sub-near/#sub-offset,
+     so it must lose on the primary (vertical-gap) key. #sub-near and #sub-offset
+     share that same primary distance — #sub-near is column-aligned with the
+     anchor (zero horizontal offset) and #sub-offset is not, so only the
+     secondary key tells them apart. The unique winner must be #sub-near: a
+     ranking test with only a farther/nearer pair (as the primary-key case
+     above already is) cannot tell a correct secondary-key formula from one
+     that always returns the same value for every candidate, because the
+     primary key alone would already pick a winner before the secondary key is
+     ever consulted.
+     Row 7 — the other three `isRenderedIn` exclusion cases besides
+     `visibility:hidden` (row 4), plus the one case that must NOT be excluded.
+     `tests/observe/visibility.test.ts` pins all five against the canonical
+     `isRenderedIn` directly; tier 3 can only reach the same five behaviourally,
+     through `anchorResolve`'s independent inline copy, and only
+     `visibility:hidden` had a tier-3 pin of its own until now. "Offscreen
+     Field"'s candidate sits at left:9999px rather than off to the left, so it
+     is still "to the right" of its anchor and a `nearest-right` chain can
+     reach it — off-canvas, not off-relation. -->
 <html><body style="margin:0;padding:0">
   <div style="position:relative;height:40px">
     <span style="position:absolute;left:0;top:12px">Amount</span>
@@ -23,5 +59,46 @@
     <span style="position:absolute;left:0;top:12px">Reference</span>
     <input id="near" style="position:absolute;left:120px;top:12px;width:60px">
     <input id="far"  style="position:absolute;left:400px;top:12px;width:60px">
+  </div>
+  <div style="position:relative;height:40px">
+    <input id="below-tie-a" style="position:absolute;left:0;top:12px;width:60px">
+    <input id="below-tie-b" style="position:absolute;left:0;top:12px;width:60px">
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:0;top:12px">Hidden Field</span>
+    <input id="ghost" style="position:absolute;left:120px;top:12px;width:60px;visibility:hidden">
+  </div>
+  <div style="position:relative;height:40px">
+    <input id="above-tie-a" style="position:absolute;left:550px;top:12px;width:60px">
+    <input id="above-tie-b" style="position:absolute;left:550px;top:12px;width:60px">
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:550px;top:12px">Total</span>
+  </div>
+  <div style="position:relative;height:40px">
+    <input id="sub-far" style="position:absolute;left:250px;top:12px;width:60px">
+  </div>
+  <div style="position:relative;height:40px">
+    <input id="sub-near" style="position:absolute;left:250px;top:12px;width:60px">
+    <input id="sub-offset" style="position:absolute;left:280px;top:12px;width:60px">
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:250px;top:12px">Subtotal</span>
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:0;top:12px">None Field</span>
+    <input id="ghost-none" style="position:absolute;left:120px;top:12px;width:60px;display:none">
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:0;top:12px">Invisible Field</span>
+    <input id="ghost-opacity" style="position:absolute;left:120px;top:12px;width:60px;opacity:0">
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:0;top:12px">Zero Field</span>
+    <input id="ghost-zero" style="position:absolute;left:120px;top:12px;width:0;height:0;border:0;padding:0">
+  </div>
+  <div style="position:relative;height:40px">
+    <span style="position:absolute;left:0;top:12px">Offscreen Field</span>
+    <input id="offscreen-input" style="position:absolute;left:9999px;top:12px;width:60px">
   </div>
 </body></html>

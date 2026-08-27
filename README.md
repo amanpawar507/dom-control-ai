@@ -1,139 +1,142 @@
 # dom-control-ai
 
-A computer-use automation system: an LLM discovers how to accomplish a goal against a live
-application surface, the successful run is recorded as a typed, versioned **capability artifact**,
-and that artifact is then **replayed deterministically** — no model in the decision loop — so an
-AI agent can invoke it reliably and cheaply in production.
+**An LLM drives a bank UI once. What it learned becomes a typed artifact that replays deterministically — with no model in the loop.**
 
-> The model discovers. The artifact becomes a reusable capability. Deterministic replay is how
-> the agent invokes it.
+Back-office banking software has no API, a legacy UI, real error states, and many tenants running the same vendor product. An agent that re-reasons its way through such a screen on every invocation is slow, expensive, and non-reproducible. So this system splits the problem in two: **discovery** happens once under a model, and **replay** happens forever without one.
 
-Built for the environment described in the brief: back-office bank/credit-union apps with no API,
-stable-but-legacy UIs, real runtime error states, and many tenants running the same vendor product.
+> The model discovers. The artifact becomes a reusable capability. Deterministic replay is how the agent invokes it.
+
+---
+
+## Watch it work
+
+▶ **[discovery-run.webm](docs/demo/discovery-run.webm)** — Claude Sonnet 5 driving a live ParaBank instance, addressing every element by opaque handle, five turns, ending in a proven artifact.
+
+*(Plays inline on the [walkthrough page](https://claude.ai/code/artifact/b633d72f-57ac-470a-9495-45b0930b272e), alongside what the recording can't show.)*
+
+
+The run cost **$0.031**. Every action passed a policy gate *before* it executed. Nothing in the recording is staged.
+
+What the video does not show, because it happens between frames:
+
+| | |
+|---|---|
+| **The model never sees a selector** | It receives roles, names and opaque handles (`o3n17`). It cannot smuggle a brittle CSS string into a recording, because it was never given one. |
+| **Every action is judged first** | The gate runs before execution and is keyed on the *resolved element*, not on a name the caller claims. |
+| **Every binding was proven** | On `done`, each touched handle is turned into a chain of strategies, and each was verified to resolve **uniquely and to that same element** on the recording surface. |
+
+---
+
+## The artifact it produced
+
+```jsonc
+{
+  "capability": { "id": "…", "product": "parabank", "version": 1, "status": "draft" },
+  "flow": [
+    { "kind": "extract",    "control": "link_12345", "as": "first_account_number" },
+    { "kind": "act",        "action": "click",  "control": "link_12345" },
+    { "kind": "act",        "action": "select", "control": "combobox_all_credit_debit",
+                            "value": "$combobox_all_credit_debit" },
+    { "kind": "act",        "action": "click",  "control": "button_go" },
+    { "kind": "checkpoint", "control": "combobox_all_credit_debit", "state": "visible" }
+  ],
+  "bindings": {
+    "tenant": "local", "variant": "baseline",
+    "entryUrl": "http://localhost:8081/parabank/overview.htm",
+    "controls": {
+      "combobox_all_credit_debit": {
+        "chain": [
+          { "tier": 3, "by": "anchor", "anchorText": "Type:", "rel": "nearest-right", "accepts": ["select"] },
+          { "tier": 2, "by": "css",    "value": "select[name=\"transactionType\"]" }
+        ],
+        "fingerprint": { "tag": "select" }
+      }
+    }
+  }
+}
+```
+
+Two details carry most of the design.
+
+**That control resolved by geometry, not by name.** ParaBank associates no `<label>` with its inputs — the canonical legacy pathology. Tier 3 finds the field by measuring which rendered element sits nearest the text `Type:`. A CSS rung is proven behind it as a fallback, and the order is *recorded*, not fixed globally.
+
+**The value is `$parameter`, never a literal.** The recorder cannot tell a password field from a search box, so it records none of them. That is how a credential fails to end up inside a committed artifact.
+
+Live in the repo: [`capabilities/parabank/…/1.0.0.json`](capabilities/).
+
+---
 
 ## Status
 
-**Phase 1 (foundations) is complete.** What exists is the deterministic substrate — the half of the
-system that runs with no model in the loop — driving a real legacy application end to end.
+**Phases 1 and 2 are complete.** The substrate and the discovery loop both work against a real application.
 
-There is **no LLM and no capability artifact yet**. Bindings are hand-written in
-`src/e2e/phase1-smoke.ts` rather than recorded, which is exactly what Phase 2 replaces. Nothing here
-discovers anything; it proves that once something *is* discovered, replaying it can be made
-deterministic, gated, and auditable.
+```
+289  unit tests    container-free, zero network calls
+ 18  end-to-end    against a local ParaBank in Docker
+$0.06 total spend  across every live model run in the project
+```
 
-Design: [`docs/design/specs/2026-08-15-capability-recorder-design.md`](docs/design/specs/2026-08-15-capability-recorder-design.md).
-Phase 1 plan: [`docs/design/plans/2026-08-15-phase-1-foundations.md`](docs/design/plans/2026-08-15-phase-1-foundations.md).
-[REPORT.md](./REPORT.md) is the submission write-up and is deliberately still a skeleton — it is
-assigned to Phase 4, once there is a whole system to describe.
+**Phase 3 — the replay engine — is next**, and it inherits one known hole worth stating up front: identity is proven at *record* time only. At replay the sole guard is a `tag` fingerprint, which tier 3 defeats by construction. A binding that resolved correctly when recorded can resolve elsewhere on replay and nothing currently notices. That is Phase 3's first design problem, not a bug to patch.
 
-## What is implemented
+Full reasoning, including every judgment call and the errors made along the way:
+[**Phase 1 decision record**](docs/design/2026-08-16-phase-1-decision-record.md) · [design spec](docs/design/specs/2026-08-15-capability-recorder-design.md)
 
-| Area | What it does | Where |
-| --- | --- | --- |
-| **Targeting ladder** | Tiers 0–3 (`data-testid` → role+name → CSS → anchor-relative geometry), tried in the order the binding declares. Exactly one match or fail — never "first of many". Tier 4 (visual/model-assisted) is unrepresentable in the type, not merely unhandled. | `src/surface/playwright-web/resolver.ts` |
-| **Policy gate** | One choke point every action passes: origin/path/action allowlist, then risk classification, then allow / refuse / escalate. | `src/policy/` |
-| **Irreversible-action escalation** | Risk is classified from the **resolved element's own names**, read through the handle at action time — not from a label the caller passes alongside. A caller's label can only make the verdict stricter. | `src/surface/playwright-web/actor.ts`, `src/policy/risk.ts` |
-| **Session boundary** | Credentials live inside one provider; what leaves it is a storage state and a timestamp. Proven empirically on the failure path, where a login error is the likeliest place for a credential to surface. | `src/session/` |
-| **Redaction** | Session token and SSN-shaped values scrubbed on every evidence write, in all three forms the token takes here: URL path parameter, cookie header, and Playwright storage state (where it is an object *value*, not a matchable string). | `src/policy/redact.ts` |
-| **Evidence** | One JSONL file per run, every line stamped with a run id and timestamp that a caller cannot override. | `src/evidence/logger.ts` |
-| **End-to-end run** | Logs in, walks to Accounts Overview, reads a balance, is refused when it tries to leave the allowlist, and asks the gate about the admin `Clean` button without touching it. | `src/e2e/phase1-smoke.ts` |
+---
 
-### What the run demonstrates
-
-- **Deterministic replay.** No model is consulted at any point. Every binding is written down ahead
-  of time; every decision comes from the policy.
-- **Degradation is observed, not assumed.** `first_balance` declares a tier-0 rung that matches
-  nothing on this target, so the chain falls through to tier 2 — and the test asserts both the
-  outcome and the declared order, so a reordered chain fails.
-- **Irreversible actions escalate.** The admin `Clean` button drops the database. It is resolved on
-  the live page and put to the gate three times — labelled truthfully, not labelled at all, and
-  labelled as something harmless — and escalates every time. It is never clicked.
-- **The allowlist holds.** A navigation off-allowlist is refused *before* Playwright is asked to go
-  anywhere; the URL afterwards is the proof, not the exception.
-- **Failures are legible.** A readiness timeout names the control, the page and the budget, and
-  keeps Playwright's own error (call log intact) as `cause`.
-
-## Setup
-
-Requires Node **≥ 24** and Docker.
+## Run it yourself
 
 ```bash
-npm ci
+npm install
 npx playwright install chromium
-cp .env.example .env      # only ANTHROPIC_API_KEY is for later phases; replay needs none
+
+npm run target:up          # ParaBank in Docker on :8081
+npm run target:wait
+
+npm test                   # 289 unit tests — no container, no network
+npm run test:e2e           # 18 against the live target
 ```
 
-The target is ParaBank (`parasoft/parabank:baseline`) — a real third-party legacy banking app, not a
-purpose-built stand-in:
+Then drive a model at it. This is the only command that spends money:
 
 ```bash
-npm run target:up         # docker compose up -d  (host port 8081)
-npm run target:wait       # polls /parabank/index.htm, 180s budget, no sleeps
-npm run target:down
+cp .env.example .env       # add ANTHROPIC_API_KEY
+npm run discover -- \
+  --id account.read-activity \
+  --goal "Open the first account's activity page and narrow it to debits" \
+  --budget 0.50 --video /tmp/run
 ```
 
-## Running it
+A 15-step run costs roughly **$0.23**. `Budget` throws *before* a charge crosses its ceiling, so overspend is structurally impossible rather than merely watched for.
 
-```bash
-npm test                  # 92 tests, container-free: no target, no network
-npm run test:e2e          # 11 tests against the live container
-npm run smoke             # the end-to-end run on its own, printing its result as JSON
-```
+---
 
-`npm test` is container-free by construction and must stay that way — it is the suite that can run
-anywhere. Some of it launches a headless chromium against local HTML fixtures, which is not the same
-thing as needing the target. Everything that touches the running container lives under `tests/e2e/`.
+## Why the tests are the interesting part
 
-Each run writes `evidence/<runId>/run.jsonl`. Run output is gitignored; the directory is tracked so
-a run has somewhere to write. Curating one audited run into the repo is a Phase 4 deliverable.
+This project shipped **seventeen** tests that passed while proving the wrong thing — the last few found in the code written to catch the earlier ones. A test asserting the model cannot smuggle a selector that only proved a required field was missing. A guard whose regex matched `loc.click(` but not `page.locator(x).click(`. A committed artifact that stopped parsing while 285 tests stayed green, because nothing read it.
 
-Waits are conditions with explicit budgets throughout. There are no sleeps.
+So the working rule here is: **a test is not done when it passes, it is done when it has been watched to fail.** Every fix in the later phases was mutation-verified — break the code deliberately, confirm the intended test goes red, revert.
+
+That discipline is also why `tsx` shipping esbuild `keepNames` while vitest does not — meaning every serialized `page.evaluate` body under test *was not the body that ships* — was caught by a guard that now walks `src/`, applies the shipping transform, and checks each callback survives in a scope as bare as the page's.
+
+---
 
 ## Layout
 
-| Path | What's in it |
-| --- | --- |
-| `src/policy/` | Allowlist, risk classification, the gate, redaction |
-| `src/surface/` | `Surface` seam types, and the Playwright web resolver + actor |
-| `src/session/` | Session provider seam; the only module that sees a credential |
-| `src/evidence/` | Run logger (JSONL, redacted on every write) |
-| `src/e2e/` | The Phase 1 end-to-end run, importable so tests and the CLI share one path |
-| `tests/` | Container-free suites; `tests/e2e/` needs the target; `tests/fixtures/` holds captured ParaBank markup and hand-authored synthetic markup, kept strictly apart |
-| `evidence/` | Run output (gitignored) |
-| `docs/design/` | Spec and phase plans |
+```
+src/observe/     what the model sees — snapshot, visibility, opaque handles
+src/discover/    the loop, tool vocabulary, model-driver seam, budget, cassettes
+src/artifact/    schema, record-time proving, the capability store
+src/surface/     resolver with the tier ladder, actor gated on the resolved element
+src/policy/      allowlist, risk, redaction — one gate every path calls
+src/session/     the seam where credentials live; capabilities never authenticate
+src/evidence/    append-only JSONL whose runId and timestamp cannot be forged
+capabilities/    recorded artifacts, one file per version, human-diffable
+```
 
-## Deliberately not built yet
+---
 
-These are deferred with reasons recorded in the phase ledger, not overlooked:
+## Not built yet, deliberately
 
-- **The observer.** `Surface.observe()` is declared and unimplemented; Phase 1 resolves bindings
-  directly against a page. Two things wait on it: a single visibility model (today tiers 0 and 2
-  apply no visibility filter, and tier 1 is gated only as an accident of Playwright's role engine),
-  and moving redaction from the log sink to the perception boundary, where the spec argues it
-  belongs.
-- **Frame and shadow descent.** `binding.scope` is *refused* rather than ignored — a binding naming a
-  frame that cannot be honoured now fails loudly instead of quietly resolving against the top
-  document.
-- **The artifact schema, the discovery loop, the runtime-condition taxonomy, escalation leases, and
-  the operator console** — Phases 2–4.
-- **`fingerprint.stableForMs`** is declared and not enforced. Settle-waiting belongs with the replay
-  engine's wait budgets, not with targeting, which must never sleep.
-- **Multi-tenancy.** The session provider serves one tenant and says so rather than pretending
-  otherwise.
+Replay engine and runtime-condition taxonomy (Phase 3). Human-in-the-loop lease and operator console (Phase 4). Cross-tenant overlay demonstration. Desktop surface adapter — the `Surface` seam exists to make it credible without building it.
 
-## Core requirements checklist
-
-- [ ] 3.1 Goal-driven agent loop (observe → decide → act against a real UI) — *no model in the loop
-      yet; the act and resolve halves exist, `observe()` does not*
-- [ ] 3.2 Typed, versioned capability artifact (steps, targeting, params, outputs, checkpoint) —
-      *the binding and strategy types exist; nothing records or versions them*
-- [ ] 3.3 Deterministic replay with an explicit error taxonomy — *replay is deterministic and its
-      resolution failures are typed; the runtime-condition taxonomy is not built*
-- [x] 3.4 Safety guardrails (allowlist, risky-action handling, redaction) — *allowlist enforced on
-      every action, irreversible actions escalate on the element's own identity, redaction on every
-      evidence write*
-- [x] 3.5 Evidence / observability — *per-run JSONL with non-overridable run id and timestamps*
-- [ ] 3.6 Human-in-the-loop escalation & live-session handoff — *the gate escalates; there is no
-      human queue or session handoff*
-- [ ] 3.7 Design for heterogeneity & multi-tenant reuse (write-up) — *the `Surface` seam is declared
-      but has no implementation checked against it; the argument is in the spec, not the code*
+[REPORT.md](./REPORT.md) is the submission write-up and is assigned to Phase 4, once there is a whole system to describe.

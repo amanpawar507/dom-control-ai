@@ -4,7 +4,6 @@ import { classifyRisk, type RiskRule, type RiskTier } from "./risk.js";
 export interface PolicyConfig {
   allowlist: Allowlist;
   riskRules: RiskRule[];
-  sensitiveControls: string[];
   approved: boolean;
 }
 
