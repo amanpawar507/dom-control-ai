@@ -1,6 +1,6 @@
 // src/replay/identity.ts
 import type { Page } from "playwright";
-import { HANDLE_ATTR, resolveBinding } from "../surface/playwright-web/resolver.js";
+import { resolveBinding } from "../surface/playwright-web/resolver.js";
 import type { Binding, Handle } from "../surface/types.js";
 
 /**
@@ -14,6 +14,21 @@ import type { Binding, Handle } from "../surface/types.js";
  * independently-proven strategies confirmed each other". A single-rung chain
  * can only ever produce the former and refusing it would make the common case
  * unreplayable, so the count carries the distinction instead of the verdict.
+ *
+ * On `chain-disagreement`, `disagreeingTiers` names the rungs whose element
+ * differs from a single **reference rung** — the first rung in chain order
+ * that resolved — and `tier` names that reference. The field exists to say
+ * which rungs are worth going to look at, so it lists the ones that
+ * contradict, not every rung that resolved: naming them all would report the
+ * reference as disagreeing with itself and leave the reader nothing to act on.
+ *
+ * The reference is arbitrary but deterministic, and it is deliberately not a
+ * majority: a two-rung chain — the common shape — has no majority to have, so
+ * inventing one would work only where the answer is least needed and would
+ * imply the outvoted rung had been proven wrong. It has not been. When rungs
+ * disagree, no element here is trustworthy, whatever the split; the reference
+ * is a coordinate for reading the report, not a verdict about which rung is
+ * right.
  */
 export type Corroboration =
   | { ok: true; handle: Handle; tier: number; agreed: number }
@@ -68,12 +83,22 @@ export type Corroboration =
  *
  * ## What is drift and what is disagreement
  *
- * A rung that no longer resolves at all — no match, or several matches — is
- * drift, and it is recorded as uncorroborating, not as a refusal. Nothing
- * about a rung that says nothing suggests a *different* element, and refusing
- * on it would kill a capability over a harmless markup change while buying no
- * safety. Only two rungs that both resolve, to genuinely different elements,
- * is `chain-disagreement`.
+ * A rung that no longer matches anything is drift, and it is recorded as
+ * uncorroborating rather than as a refusal. Nothing about a rung that says
+ * nothing suggests a *different* element, and refusing on it would kill a
+ * capability over a harmless markup change while buying no safety.
+ *
+ * An **ambiguous** rung is judged on its match set rather than on the fact of
+ * its ambiguity, which is why `Resolution` carries the candidate handles. If
+ * the element the rest of the chain agreed on is among them, the rung has
+ * lost its discriminating power and contradicts nothing: drift, exactly like
+ * a rung that stopped matching. If it is absent, that rung now points
+ * somewhere else entirely and is disagreement — treating it as drift would be
+ * a downgrade path, where the surface only has to make a contradicting rung
+ * ambiguous rather than uniquely wrong to turn a refusal into a shrug. A rung
+ * whose candidates are unreported cannot be judged either way and is left as
+ * drift; the resolver reports them for every ambiguous outcome, so that is a
+ * defensive branch, not a route anything currently takes.
  *
  * Identity is compared by the resolver's own `HANDLE_ATTR` stamp, which is
  * written read-before-write: re-resolving one element yields the same handle
@@ -102,8 +127,12 @@ export async function resolveCorroborated(
 
   /** Every rung that resolved to exactly one element, in chain order. */
   const resolved: Array<{ tier: number; handle: Handle }> = [];
-  /** The first rung that matched several elements, if any — reported only when nothing resolved. */
-  let firstAmbiguous: number | null = null;
+  /**
+   * Every rung that matched several elements, with the handles it was torn
+   * between. Kept rather than counted because whether the agreed element is
+   * among those candidates is what separates drift from disagreement.
+   */
+  const ambiguous: Array<{ tier: number; candidates: Handle[] | undefined }> = [];
 
   for (const strategy of binding.chain) {
     // One rung at a time. `resolveBinding` takes a whole binding and walks the
@@ -128,46 +157,58 @@ export async function resolveCorroborated(
       return { ok: false, reason: "fingerprint-mismatch", tier: strategy.tier };
     }
 
-    // `no-match` and `ambiguous` are both "this rung named no single element".
-    // Neither is evidence of a *different* element: one lost the element, the
-    // other lost the ability to tell it from its neighbours. Both are recorded
-    // as uncorroborating and the walk continues.
-    if (res.reason === "ambiguous") firstAmbiguous ??= strategy.tier;
+    // Neither `no-match` nor `ambiguous` names a single element, so neither can
+    // corroborate anything and the walk continues either way. They part company
+    // afterwards: an ambiguous rung has a match set, and a match set can be
+    // checked against the agreed element (below), while a rung that matched
+    // nothing has nothing to check.
+    if (res.reason === "ambiguous") ambiguous.push({ tier: strategy.tier, candidates: res.candidates });
   }
 
-  const strongest = resolved[0];
-  if (strongest === undefined) {
+  // The reference rung: the first in chain order that resolved. The chain is
+  // ordered by record-time reliability (`proveControl`'s `RANK`), so that is
+  // the strongest surviving strategy rather than an artefact of iteration —
+  // and it is the coordinate every disagreement below is reported against.
+  //
+  // Its handle is safe to compare as an identity because `resolveBinding`
+  // guarantees a handle it returns names exactly one element; it refuses rather
+  // than reporting `ok: true` for a handle two elements answer to. That
+  // guarantee is load-bearing here — the comparisons below are string equality
+  // — and it is deliberately not re-checked in this file. A property every
+  // caller re-checks is a property nobody owns.
+  const reference = resolved[0];
+  if (reference === undefined) {
     // Nothing resolved. Ambiguity outranks absence in the report because it is
     // the more specific finding: the element is plausibly still on the page and
     // a strategy stopped distinguishing it, which is a different repair from
     // "it is gone".
-    return firstAmbiguous === null
+    const first = ambiguous[0];
+    return first === undefined
       ? { ok: false, reason: "no-match" }
-      : { ok: false, reason: "ambiguous", tier: firstAmbiguous };
+      : { ok: false, reason: "ambiguous", tier: first.tier };
   }
 
-  if (new Set(resolved.map((r) => r.handle)).size > 1) {
-    // Every rung that resolved is named, not just the first contradicting
-    // pair. No rung is privileged — the chain is ordered by record-time
-    // brittleness, not by authority — so a majority agreeing among a split set
-    // confers no trust, and reporting only the outliers would imply the
-    // remainder had been vindicated.
-    return { ok: false, reason: "chain-disagreement", disagreeingTiers: resolved.map((r) => r.tier) };
+  const contradicting = resolved.filter((r) => r.handle !== reference.handle).map((r) => r.tier);
+  if (contradicting.length > 0) {
+    return {
+      ok: false,
+      reason: "chain-disagreement",
+      tier: reference.tier,
+      disagreeingTiers: contradicting,
+    };
   }
 
-  // The rungs agree on a handle; confirm the handle still names exactly one
-  // element. It normally does — `HANDLE_ATTR` is stamped read-before-write on
-  // one element at a time — but a page that clones a stamped node (a re-rendered
-  // row, a duplicated table body) leaves two elements carrying one handle, and
-  // then the string equality above compares equal for two *different* elements
-  // and the agreement is fiction. The actor performs the same one-or-fail count
-  // before acting; doing it here too is what makes this function's own answer
-  // true rather than merely safe downstream.
-  const count = await page.locator(`[${HANDLE_ATTR}="${strongest.handle}"]`).count();
-  if (count !== 1) return { ok: false, reason: "ambiguous", tier: strongest.tier };
+  // The rungs that resolved agree. Now the ambiguous ones: a match set that
+  // does not contain the agreed element is a rung pointing somewhere else, not
+  // a rung that has gone vague, and it contradicts the answer exactly as a
+  // uniquely-resolving rung would. Checked after the resolved rungs so a
+  // definite contradiction is always reported in preference to this one.
+  const elsewhere = ambiguous
+    .filter((a) => a.candidates !== undefined && !a.candidates.includes(reference.handle))
+    .map((a) => a.tier);
+  if (elsewhere.length > 0) {
+    return { ok: false, reason: "chain-disagreement", tier: reference.tier, disagreeingTiers: elsewhere };
+  }
 
-  // The reported tier is the first rung in chain order that resolved. The chain
-  // is ordered by record-time reliability (`proveControl`'s `RANK`), so that is
-  // the strongest surviving strategy rather than an artefact of iteration.
-  return { ok: true, handle: strongest.handle, tier: strongest.tier, agreed: resolved.length };
+  return { ok: true, handle: reference.handle, tier: reference.tier, agreed: resolved.length };
 }

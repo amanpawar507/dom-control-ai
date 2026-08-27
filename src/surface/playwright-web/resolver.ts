@@ -302,7 +302,7 @@ export async function resolveBinding(
     );
   }
 
-  let sawAmbiguous: { tier: number; count: number } | null = null;
+  let sawAmbiguous: { tier: number; count: number; candidates: Handle[] } | null = null;
   // Every rung tried before the one that wins, in order. The winning rung
   // itself is never pushed here — it is reported through `tier`, not `attempts`.
   const attempts: Attempt[] = [];
@@ -323,7 +323,18 @@ export async function resolveBinding(
       continue;
     }
     if (matches.length > 1) {
-      sawAmbiguous ??= { tier: strategy.tier, count: matches.length };
+      // Stamp every candidate, not just count them. The handles are what let a
+      // caller ask *which* elements this rung was torn between — replay's
+      // corroboration needs to know whether the element the rest of the chain
+      // agreed on is among them, which distinguishes a rung that lost its
+      // discriminating power (drift) from one that now points somewhere else
+      // entirely (the chain disagreeing with itself). Deriving that in the
+      // caller would mean a second implementation of matching living outside
+      // the resolver, which is the duplication every guard in this codebase
+      // exists to prevent. Stamping is idempotent — read-before-write — so a
+      // candidate that later wins a rung reports the same handle.
+      const candidates = await Promise.all(matches.map(stampHandle));
+      sawAmbiguous ??= { tier: strategy.tier, count: matches.length, candidates };
       attempts.push({ tier: strategy.tier, reason: "ambiguous" });
       continue; // never pick one — try the next strategy
     }
@@ -335,11 +346,46 @@ export async function resolveBinding(
 
     // For an anchor match this is a no-op read: the element was already stamped
     // in-page, and read-before-write returns that same handle.
-    return { ok: true, tier: strategy.tier, handle: await stampHandle(only), attempts };
+    const handle = await stampHandle(only);
+
+    // `ok: true` claims "exactly one element", and the handle is the only form
+    // in which that element leaves this function — so the claim is false unless
+    // the handle names exactly one element too. It normally does: stamps are
+    // written read-before-write, one element at a time. A page that clones an
+    // already-stamped node (a re-rendered row, a duplicated table body) breaks
+    // it, and then this function returns a handle that two elements answer to.
+    //
+    // The actor already refuses such a handle on the same one-or-fail terms,
+    // which is why this never became a wrong *action* — but a property every
+    // caller has to re-check is a property nobody owns, and the second caller
+    // (replay's corroboration, which compares two rungs by handle string) would
+    // have read agreement into two genuinely different elements. Owning it here
+    // is what makes `ok: true` mean what its type says.
+    //
+    // Counted without `filterRendered`, deliberately: a hidden twin still
+    // answers to the handle, and the actor's own count does not filter either.
+    // Agreeing with the consumer beats being cleverer than it.
+    const carriers = await page.locator(`[${HANDLE_ATTR}="${handle}"]`).count();
+    if (carriers !== 1) {
+      // Reported as ambiguity, and the chain continues, because that is exactly
+      // what it is — the identifier names several elements — and because a later
+      // rung may land on an element whose handle is still its own.
+      sawAmbiguous ??= { tier: strategy.tier, count: carriers, candidates: [handle] };
+      attempts.push({ tier: strategy.tier, reason: "ambiguous" });
+      continue;
+    }
+
+    return { ok: true, tier: strategy.tier, handle, attempts };
   }
 
   if (sawAmbiguous) {
-    return { ok: false, reason: "ambiguous", tier: sawAmbiguous.tier, count: sawAmbiguous.count };
+    return {
+      ok: false,
+      reason: "ambiguous",
+      tier: sawAmbiguous.tier,
+      count: sawAmbiguous.count,
+      candidates: sawAmbiguous.candidates,
+    };
   }
   return { ok: false, reason: "no-match" };
 }

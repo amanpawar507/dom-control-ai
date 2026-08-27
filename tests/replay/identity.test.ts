@@ -78,7 +78,14 @@ describe("resolveCorroborated", () => {
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.reason).toBe("chain-disagreement");
-    expect(res.disagreeingTiers).toEqual([0, 2]);
+    // Reported against a reference rung — the first that resolved — so the
+    // field names what to go and look at. The brief's own draft of this test
+    // expected `[0, 2]`, every rung that resolved; the coordinator's round-1
+    // direction narrowed it to the rungs that differ from the reference,
+    // because naming the reference among the disagreeing has it disagreeing
+    // with itself and leaves a reader nothing to act on.
+    expect(res.tier).toBe(0);
+    expect(res.disagreeingTiers).toEqual([2]);
   });
 
   it("still resolves on a single-rung chain, reporting that nothing corroborated it", async () => {
@@ -168,10 +175,13 @@ describe("resolveCorroborated", () => {
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.reason).toBe("chain-disagreement");
-    // Every rung that resolved, in chain order. Two of the three agree, and
-    // that majority buys nothing: no rung is privileged, so once the set is
-    // split none of its answers can be acted on.
-    expect(res.disagreeingTiers).toEqual([0, 2, 1]);
+    // The rungs that differ from the reference (tier 0, the first that
+    // resolved), in chain order. Two of the three agree, and that majority
+    // buys nothing — the reference is a coordinate for reading the report,
+    // not a ruling that the outvoted rung is the wrong one. Nothing is acted
+    // on either way.
+    expect(res.tier).toBe(0);
+    expect(res.disagreeingTiers).toEqual([1]);
   });
 
   it("names only the rungs that actually resolved when reporting disagreement", async () => {
@@ -198,14 +208,16 @@ describe("resolveCorroborated", () => {
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.reason).toBe("chain-disagreement");
-    expect(res.disagreeingTiers).toEqual([0, 2]);
+    expect(res.tier).toBe(0);
+    expect(res.disagreeingTiers).toEqual([2]);
   });
 
-  it("treats an ambiguous rung as uncorroborating rather than disqualifying", async () => {
-    // Ambiguity is lost discriminating power, not a claim about a different
-    // element — the same category as a rung that stopped matching. It cannot
-    // corroborate (there is no single element to compare), so `agreed` stays
-    // at the one rung that did resolve.
+  it("treats an ambiguous rung that still matches the agreed element as drift", async () => {
+    // `input` now matches both inputs, and #target — the element the resolved
+    // rung named — is one of them. That rung has lost its discriminating
+    // power; it has not started pointing somewhere else, so it contradicts
+    // nothing. It still cannot corroborate, because there is no single element
+    // to compare, so `agreed` stays at the one rung that did resolve.
     await page.setContent(`
       <input id="target" data-testid="amt">
       <input id="other">
@@ -225,6 +237,36 @@ describe("resolveCorroborated", () => {
     if (!res.ok) return;
     expect(res.agreed).toBe(1);
     expect(await idOf(res.handle)).toBe("target");
+  });
+
+  it("refuses when an ambiguous rung matches several elements and the agreed one is not among them", async () => {
+    // The downgrade path this closes: without it, drift only has to make a
+    // contradicting rung ambiguous rather than uniquely wrong, and a refusal
+    // becomes a shrug — the tier-0 rung would win alone with `agreed: 1` while
+    // a proven rung was pointing at two entirely different elements. The
+    // judgment needs the rung's match set, which is why `Resolution` carries
+    // the candidate handles rather than only a count.
+    await page.setContent(`
+      <input id="target" data-testid="amt">
+      <input id="x" class="amount">
+      <input id="y" class="amount">
+    `);
+    const res = await resolveCorroborated(
+      page,
+      {
+        scope: [],
+        chain: [
+          { tier: 0, by: "testid", value: "amt" },
+          { tier: 2, by: "css", value: "input.amount" },
+        ],
+      },
+      {},
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toBe("chain-disagreement");
+    expect(res.tier).toBe(0);
+    expect(res.disagreeingTiers).toEqual([2]);
   });
 
   it("reports ambiguity when that is the only thing standing in the way", async () => {
@@ -314,8 +356,14 @@ describe("resolveCorroborated", () => {
     // as long as one element carries it. A page that clones a stamped node
     // breaks that: both copies carry the handle, so two rungs landing on two
     // different elements would compare equal and the agreement would be
-    // fiction. Nothing is acted on, and the reason is ambiguity, because that
-    // is what a handle naming two elements is.
+    // fiction.
+    //
+    // The guarantee that makes the comparison sound lives in `resolveBinding`,
+    // which refuses a handle more than one element answers to rather than
+    // reporting `ok: true` (see `tests/surface/resolver.test.ts`). This test is
+    // the consumer-side regression: corroboration relies on that property and
+    // deliberately does not re-check it, so it has to fail here if the resolver
+    // ever stops providing it.
     await page.setContent(`<input id="orig" data-testid="amt" name="amount">`);
     const binding: Binding = {
       scope: [],

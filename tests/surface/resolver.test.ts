@@ -23,9 +23,20 @@ describe("resolveBinding", () => {
       scope: [],
       chain: [{ tier: 1, by: "role", role: "button", name: "Find Transactions" }],
     };
-    expect(await resolveBinding(page, binding, {})).toEqual({
+    const res = await resolveBinding(page, binding, {});
+    expect(res).toEqual({
       ok: false, reason: "ambiguous", tier: 1, count: 4,
+      candidates: [expect.any(String), expect.any(String), expect.any(String), expect.any(String)],
     });
+    if (res.ok) return;
+    // The candidates are identities, not a tally: each stamped handle names one
+    // of the four buttons and no two name the same one. A caller can therefore
+    // ask which elements the rung was torn between — which is the whole reason
+    // the field exists — rather than only how many there were.
+    const ids = await Promise.all(
+      (res.candidates ?? []).map((h) => page.locator(`[data-dca-handle="${h}"]`).getAttribute("id")),
+    );
+    expect(ids).toEqual(["findById", "findByDate", "findByDateRange", "findByAmount"]);
   });
 
   // The anchor tests run against findtrans.html, not login.html. Both fixtures have
@@ -367,6 +378,66 @@ describe("resolveBinding", () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.attempts).toEqual([]);
+  });
+
+  // `ok: true` claims "exactly one element", and the handle is the only form in
+  // which that element leaves the resolver — so the claim is false the moment two
+  // elements answer to the handle. A page that clones an already-stamped node is
+  // how that happens, and it is not exotic: a re-rendered row or a duplicated
+  // table body does it. The actor refuses such a handle before acting, but a
+  // property every caller has to re-check is a property nobody owns, and replay's
+  // corroboration compares two rungs *by handle string* — it would read agreement
+  // into two genuinely different elements.
+  it("refuses a handle that more than one element answers to", async () => {
+    await page.setContent(`<input id="orig" data-testid="amt">`);
+    const binding: Binding = { scope: [], chain: [{ tier: 0, by: "testid", value: "amt" }] };
+
+    const before = await resolveBinding(page, binding, {});
+    expect(before).toMatchObject({ ok: true, tier: 0 });
+
+    // Clone the stamped node, stripping what the strategy matches on, so the
+    // strategy still finds exactly one element and only the handle is shared.
+    await page.evaluate(() => {
+      const el = document.querySelector("#orig");
+      if (el === null) throw new Error("fixture element missing");
+      const twin = el.cloneNode(true) as Element;
+      twin.setAttribute("id", "twin");
+      twin.removeAttribute("data-testid");
+      document.body.appendChild(twin);
+    });
+
+    expect(await resolveBinding(page, binding, {})).toEqual({
+      ok: false, reason: "ambiguous", tier: 0, count: 2, candidates: [expect.any(String)],
+    });
+  });
+
+  it("falls through a duplicated handle to a rung whose element still owns its own", async () => {
+    // The duplicated handle is reported as ambiguity and the chain continues,
+    // rather than ending the resolution: another rung may land on an element
+    // whose identity is still its own, and that answer is safe to return.
+    await page.setContent(`<input id="a" data-testid="amt"><input id="b" name="other">`);
+    await resolveBinding(page, { scope: [], chain: [{ tier: 0, by: "testid", value: "amt" }] }, {});
+    await page.evaluate(() => {
+      const el = document.querySelector("#a");
+      if (el === null) throw new Error("fixture element missing");
+      const twin = el.cloneNode(true) as Element;
+      twin.setAttribute("id", "a-twin");
+      twin.removeAttribute("data-testid");
+      document.body.appendChild(twin);
+    });
+
+    const res = await resolveBinding(page, {
+      scope: [],
+      chain: [
+        { tier: 0, by: "testid", value: "amt" },
+        { tier: 2, by: "css", value: 'input[name="other"]' },
+      ],
+    }, {});
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.tier).toBe(2);
+    expect(res.attempts).toEqual([{ tier: 0, reason: "ambiguous" }]);
+    expect(await page.locator(`[data-dca-handle="${res.handle}"]`).getAttribute("id")).toBe("b");
   });
 
   it("substitutes $arg placeholders into strategy fields", async () => {

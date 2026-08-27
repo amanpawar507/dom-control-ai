@@ -66,9 +66,33 @@ export interface Attempt {
   reason: "no-match" | "ambiguous";
 }
 
+/**
+ * `candidates` carries the `HANDLE_ATTR` stamp of every element an ambiguous
+ * rung matched, so a caller can ask which *elements* the rung was torn
+ * between rather than only how many there were. Replay's corroboration
+ * (`src/replay/identity.ts`) is the consumer that needs it: an ambiguous rung
+ * whose match set still contains the element the rest of the chain agreed on
+ * contradicts nothing and is ordinary drift, while one that resolves entirely
+ * elsewhere is the chain disagreeing with itself — and `count` alone cannot
+ * tell those apart. Reporting the handles rather than a candidate count is
+ * what keeps that judgment in one place: the resolver owns matching, and the
+ * caller compares identities it was handed instead of re-deriving a match set
+ * of its own.
+ *
+ * Present only on `reason: "ambiguous"`, and `count` remains the number of
+ * *elements* matched. The two can differ by exactly one route — a page that
+ * cloned an already-stamped node, so two elements carry one handle — and that
+ * is a case the resolver refuses rather than resolves (see `resolveBinding`).
+ */
 export type Resolution =
   | { ok: true; tier: number; handle: Handle; attempts: Attempt[] }
-  | { ok: false; reason: "no-match" | "ambiguous" | "fingerprint-mismatch"; tier?: number; count?: number };
+  | {
+      ok: false;
+      reason: "no-match" | "ambiguous" | "fingerprint-mismatch";
+      tier?: number;
+      count?: number;
+      candidates?: Handle[];
+    };
 
 export interface Action {
   type: ActionType;
