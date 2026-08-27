@@ -38,9 +38,22 @@ function versionFile(version: number): string {
   return `${version}.0.0.json`;
 }
 
+/**
+ * The store layout's one implementation. `artifactPath` derives its
+ * arguments from an artifact already in hand; `src/replay/load.ts` is handed
+ * `product`/`id`/`version` directly by a caller that has no artifact yet —
+ * that is the whole point of loading one — so it needs the convention itself,
+ * not a function that requires the artifact it exists to produce. Exporting
+ * this primitive keeps both callers pointed at one join/versionFile
+ * implementation instead of two copies that could drift.
+ */
+export function capabilityPath(root: string, product: string, id: string, version: number): string {
+  return join(root, "capabilities", product, id, versionFile(version));
+}
+
 export function artifactPath(root: string, artifact: CapabilityArtifact): string {
   const { product, id, version } = artifact.capability;
-  return join(root, "capabilities", product, id, versionFile(version));
+  return capabilityPath(root, product, id, version);
 }
 
 /**

@@ -1,0 +1,30 @@
+{
+  "capability": {
+    "id": "unbound",
+    "product": "parabank",
+    "version": 1,
+    "goal": "A fixture flow step names a control that bindings.controls never defines.",
+    "inputs": {},
+    "outputs": {
+      "result": {
+        "type": "string"
+      }
+    },
+    "status": "draft"
+  },
+  "flow": {
+    "steps": [
+      {
+        "kind": "extract",
+        "control": "missing_control",
+        "as": "result"
+      }
+    ]
+  },
+  "bindings": {
+    "tenant": "local",
+    "variant": "baseline",
+    "entryUrl": "http://localhost:8081/parabank/overview.htm",
+    "controls": {}
+  }
+}
