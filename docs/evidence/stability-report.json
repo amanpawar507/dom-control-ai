@@ -1,0 +1,52 @@
+{
+  "n": 5,
+  "runs": [
+    {
+      "runId": "replay-e2e-1788211609374-1",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788211609700-2",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788211609990-3",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788211610270-4",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788211610532-5",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    }
+  ],
+  "agreed": true,
+  "divergences": []
+}

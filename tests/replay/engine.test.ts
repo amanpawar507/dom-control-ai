@@ -364,6 +364,13 @@ describe("replay — the four result shapes", () => {
       args: { account: "12345" },
       policy: policyWith(),
       log: newLogger(),
+      // The control is absent by construction, so the run waits out its whole
+      // patience budget before saying so. Named here at 300ms rather than left
+      // at the ten-second default purely so a container-free suite does not
+      // spend ten seconds waiting for something this fixture will never serve.
+      // Nothing else about the subject changes: the assertions below are on
+      // what the failure *says*, and the budget it waited is not one of them.
+      controlBudgetMs: 300,
     });
 
     expect(res.status).toBe("failed");
@@ -643,6 +650,55 @@ describe("replay — checkpoints", () => {
     expect(res.stepId).toContain("result_panel");
     expect(res.expected).toContain("result_panel");
     expect(res.observed).toMatch(/budget|re-wait|bounded/i);
+  });
+});
+
+describe("replay — a control that is not there yet", () => {
+  it("waits for a non-checkpoint control, as patiently as it waits for a checkpoint", async () => {
+    // Removing the wait must break something, and before this test it did not:
+    // the reference application happens to have finished filling its table by
+    // the time `goto` resolves, so every live run passed either way. A step
+    // that names a control on a page still filling is the transient-slowness
+    // case whatever the step's kind, and this is the page that proves it —
+    // `#late` does not exist when the entry finishes loading.
+    PAGES.set(
+      "/app/late.htm",
+      `<!doctype html><html><body>
+         <input id="acct" data-testid="acct" name="accountId">
+         <script>
+           setTimeout(function () {
+             var d = document.createElement("div");
+             d.id = "late";
+             d.textContent = "arrived";
+             document.body.appendChild(d);
+           }, 120);
+         </script>
+       </body></html>`,
+    );
+
+    const base = findArtifact({ entryUrl: `${ORIGIN}/app/late.htm` });
+    const res = await replay({
+      page,
+      artifact: {
+        ...base,
+        flow: { steps: [{ kind: "extract", control: "late_panel", as: "text" }] },
+        bindings: {
+          ...base.bindings,
+          controls: {
+            ...base.bindings.controls,
+            late_panel: { scope: [], chain: [{ tier: 2, by: "css", value: "#late" }] },
+          },
+        },
+      },
+      args: {},
+      policy: policyWith(),
+      log: newLogger(),
+      controlBudgetMs: 3_000,
+    });
+
+    expect(res.status).toBe("success");
+    if (res.status !== "success") return;
+    expect(res.outputs).toEqual({ text: "arrived" });
   });
 });
 

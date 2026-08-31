@@ -56,6 +56,28 @@ export interface ReplayOptions {
    * transient slowness and allows one bounded re-wait.
    */
   checkpointBudgetMs?: number;
+  /**
+   * How long any *other* control may take to appear before the step naming it
+   * is called a failure. Defaults to `actionBudgetMs`, on the reasoning that a
+   * caller who has said how long an action may take has said how patient this
+   * run is allowed to be.
+   *
+   * Only checkpoints waited before. Every step that names a control waits now,
+   * which is what §7's "condition-based waits with explicit budgets" asks for
+   * and what the checkpoint path was already doing alone: a control that is not
+   * on the page *yet* is the transient-slowness case, and there is no reason
+   * `extract` should be less patient than `checkpoint` about the same page.
+   *
+   * A note on what this is NOT justified by, because the first version of this
+   * comment claimed it and the claim does not survive measurement. The
+   * reference target fills its accounts table from an XHR, and it is tempting
+   * to say the table is empty when `page.goto` resolves. It is not: `goto`
+   * waits for `load`, and the table measures 12 rows by then. The wait earns
+   * its place on the general principle, not on that application's behaviour,
+   * and `tests/replay/engine.test.ts` covers it with a page that genuinely adds
+   * a control late — which is the only honest way to show it is load-bearing.
+   */
+  controlBudgetMs?: number;
   /** Supplied when a declared recovery needs to re-authenticate. */
   session?: SessionProvider;
   /**
@@ -123,6 +145,7 @@ async function execute(opts: ReplayOptions): Promise<ReplayResult> {
   const recoveries = opts.recoveries ?? {};
   const actionBudgetMs = opts.actionBudgetMs ?? DEFAULT_ACTION_BUDGET_MS;
   const checkpointBudgetMs = opts.checkpointBudgetMs ?? DEFAULT_ACTION_BUDGET_MS;
+  const controlBudgetMs = opts.controlBudgetMs ?? actionBudgetMs;
   const { entryUrl, controls } = artifact.bindings;
 
   const evidence: Evidence = { runId: log.runId, logPath: log.path() };
@@ -221,18 +244,24 @@ async function execute(opts: ReplayOptions): Promise<ReplayResult> {
       return fail(stepId, `a binding for control "${step.control}"`, "the artifact binds no such control", "no-match");
     }
 
-    // A checkpoint gets a bounded chance to arrive before it is called absent.
-    // The wait is on Playwright's own condition against the chain's first rung
-    // — resolution then decides identity, so waiting cannot become a second way
-    // to pick an element.
-    if (step.kind === "checkpoint") {
-      const first = binding.chain[0];
-      if (first !== undefined && first.by !== "anchor") {
-        await locatorFor(page, first, args)
-          .first()
-          .waitFor({ state: "visible", timeout: checkpointBudgetMs })
-          .catch(() => undefined);
-      }
+    // Every step that names a control gets a bounded chance for that control to
+    // arrive before it is called absent. The wait is on Playwright's own
+    // condition against a rung of the recorded chain — resolution then decides
+    // identity over the *whole* chain, so waiting cannot become a second way to
+    // pick an element: nothing here reads which element the wait settled on.
+    //
+    // It waits on the first rung that can be expressed as a locator rather than
+    // on `chain[0]`, because an anchor rung is geometry rather than a selector
+    // and has no Playwright condition to wait on. Chains are ordered by
+    // record-time reliability and this target's are frequently anchor-first, so
+    // keying the wait on `chain[0]` meant the controls most likely to need a
+    // wait were the ones that never got one.
+    const waitOn = binding.chain.find((rung) => rung.by !== "anchor");
+    if (waitOn !== undefined) {
+      await locatorFor(page, waitOn, args)
+        .first()
+        .waitFor({ state: "visible", timeout: step.kind === "checkpoint" ? checkpointBudgetMs : controlBudgetMs })
+        .catch(() => undefined);
     }
 
     const corr = await resolveCorroborated(page, normaliseBinding(binding), args);

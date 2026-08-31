@@ -204,6 +204,10 @@ describe("replay evidence — the run as a readable story", () => {
       args: { account: "12345" },
       policy: policyWith(),
       log,
+      // See the note on the same option in tests/replay/engine.test.ts: the
+      // control is absent by construction, and this only declines to spend the
+      // default ten seconds proving it.
+      controlBudgetMs: 300,
     });
     expect(res.status).toBe("failed");
 
@@ -307,6 +311,7 @@ describe("replay evidence — a run summary carrying elapsed time against its bu
       args: { account: "12345" },
       policy: policyWith(),
       log,
+      controlBudgetMs: 300,
     });
     expect(res.status).toBe("failed");
 
