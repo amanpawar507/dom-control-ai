@@ -22,6 +22,17 @@ import type { SessionProvider } from "../session/provider.js";
  */
 const DEFAULT_ACTION_BUDGET_MS = 10_000;
 
+/**
+ * What a run is expected to cost in wall-clock time, absent a caller-supplied
+ * figure. Ten minutes to match spec §7's discovery wall clock — the same
+ * order of magnitude expectation, on the same kind of run. Purely evidentiary
+ * here: unlike discovery's `wallClockMs`, replay does not stop at this
+ * figure — it is what the logged run summary is compared against, so a run
+ * that blew past its expectation is a fact the trail carries rather than a
+ * number nobody wrote down.
+ */
+const DEFAULT_WALL_CLOCK_BUDGET_MS = 10 * 60 * 1000;
+
 export interface ReplayOptions {
   page: Page;
   artifact: CapabilityArtifact;
@@ -47,6 +58,15 @@ export interface ReplayOptions {
   checkpointBudgetMs?: number;
   /** Supplied when a declared recovery needs to re-authenticate. */
   session?: SessionProvider;
+  /**
+   * The clock the run summary's elapsed time is measured against, injectable
+   * for the same reason `discover()` (`src/discover/loop.ts`) takes one: a
+   * test proving a timing property must not sleep to prove it. Defaults to
+   * `Date.now`.
+   */
+  now?: () => number;
+  /** See `DEFAULT_WALL_CLOCK_BUDGET_MS`. */
+  wallClockBudgetMs?: number;
 }
 
 /** `$name` — the same placeholder shape the recorder writes for a parameterised value. */
@@ -72,8 +92,32 @@ const PLACEHOLDER = /^\$([A-Za-z_]\w*)$/;
  *
  * **A run that stops, stops.** A business outcome ends the walk. The status
  * alone cannot show that; a step after the triggering one, left unexecuted, can.
+ *
+ * A fourth property holds across every path but is not demonstrated by any of
+ * the three above: **the run writes down what it cost.** Replay spends no
+ * model tokens, but every path — success, business outcome, escalation, or
+ * failure — ends in a `replay.summary` event carrying elapsed time against
+ * `wallClockBudgetMs`. It is logged once, from this outer wrapper, so no
+ * return path inside `execute` below can omit it.
  */
 export async function replay(opts: ReplayOptions): Promise<ReplayResult> {
+  const now = opts.now ?? Date.now;
+  const wallClockBudgetMs = opts.wallClockBudgetMs ?? DEFAULT_WALL_CLOCK_BUDGET_MS;
+  const startedAt = now();
+  const result = await execute(opts);
+  const elapsedMs = now() - startedAt;
+  opts.log.log({
+    kind: "replay.summary",
+    status: result.status,
+    elapsedMs,
+    wallClockBudgetMs,
+    overBudget: elapsedMs > wallClockBudgetMs,
+  });
+  return result;
+}
+
+/** The walk itself. Factored out of `replay` so the summary above is logged exactly once, from a single return point, regardless of which of `execute`'s many internal returns produced the result. */
+async function execute(opts: ReplayOptions): Promise<ReplayResult> {
   const { page, artifact, args, policy, log } = opts;
   const conditions = opts.conditions ?? SEVEN_CONDITIONS;
   const recoveries = opts.recoveries ?? {};
