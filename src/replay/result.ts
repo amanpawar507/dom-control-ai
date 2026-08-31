@@ -53,6 +53,14 @@ export interface Evidence {
  *    recovery (`src/replay/recover.ts`) without clearing.
  */
 export type FailureKind =
+  /**
+   * The artifact cannot replay with these arguments, and that was knowable
+   * without touching the page: a step names a control nothing binds, or a
+   * recorded `$placeholder` has no argument to fill it. Distinct from every
+   * kind below, which describe a *page* that did not behave — this one says the
+   * request was never runnable, and no browser needed to prove it.
+   */
+  | "unreplayable"
   | "no-match"
   | "ambiguous"
   | "fingerprint-mismatch"

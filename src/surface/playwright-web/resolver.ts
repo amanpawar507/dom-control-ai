@@ -58,7 +58,18 @@ function describe(s: Strategy, field: string): string {
  * type makes that unreachability a compile-time fact, so the switch is total
  * over exactly the three selector-shaped strategies.
  */
-function locatorFor(page: Page, s: LocatableStrategy, args: Record<string, string>): Locator {
+/**
+ * Exported so a caller that needs to *wait* for a recorded control can wait on
+ * a real Playwright condition rather than polling `resolveBinding` behind a
+ * delay. Resolution answers "is it here now"; a checkpoint on a page that fills
+ * asynchronously has to ask "is it here yet", and §7's fourth rule allows only
+ * a condition with a budget — never a sleep.
+ *
+ * It builds a locator and nothing more: no stamping, no uniqueness check, no
+ * fingerprint. Everything that decides *identity* stays in `resolveBinding` and
+ * `resolveCorroborated`, so this cannot become a second way to pick an element.
+ */
+export function locatorFor(page: Page, s: LocatableStrategy, args: Record<string, string>): Locator {
   switch (s.by) {
     case "testid":
       return page.locator(`[data-testid="${subst(s.value, args, describe(s, "value"))}"]`);

@@ -86,13 +86,56 @@ export interface ConditionDecl {
  * trivially and the only thing being asked is "does this exist, rendered".
  */
 export async function detect(page: Page, declared: ConditionDecl[]): Promise<DetectedCondition | null> {
+  return (await detectWithDiagnostics(page, declared)).detected;
+}
+
+/**
+ * What `detect` concluded, plus why each landmark that did not fire failed to.
+ *
+ * `detect` answers a yes/no question and that is all a caller deciding what to
+ * do next needs. But "no condition is present" and "this detector no longer
+ * works" are different facts, and the yes/no answer is identical for both — a
+ * capability whose `record-not-found` landmark has drifted into matching two
+ * nodes stops reporting that outcome, silently, and every run afterwards looks
+ * like a clean pass.
+ *
+ * So the split is reported rather than inferred:
+ *
+ *  - `ambiguous` — the landmark resolved to more than one rendered element.
+ *    Almost always means the selector has gone too broad to still mean what it
+ *    meant, which is why abstaining is right and why it is worth saying so.
+ *  - `unmatched` — the landmark matched nothing. Ordinary when the condition
+ *    is simply absent, and indistinguishable from a landmark that has been
+ *    removed from the page altogether, which is exactly why the engine logs it
+ *    rather than deciding.
+ *
+ * Neither changes the verdict. This function only makes the abstention
+ * visible; nothing here fires a condition that `detect` would not.
+ */
+export interface DetectionDiagnostics {
+  detected: DetectedCondition | null;
+  ambiguous: string[];
+  unmatched: string[];
+}
+
+export async function detectWithDiagnostics(
+  page: Page,
+  declared: ConditionDecl[],
+): Promise<DetectionDiagnostics> {
+  const ambiguous: string[] = [];
+  const unmatched: string[] = [];
+
   for (const decl of declared) {
     if (decl.locate === undefined) continue;
     const res = await resolveBinding(page, { scope: [], chain: [decl.locate] }, {});
-    if (!res.ok) continue;
-    return { id: decl.id, class: decl.class, code: decl.code, message: decl.message };
+    if (res.ok) {
+      return { detected: { id: decl.id, class: decl.class, code: decl.code, message: decl.message }, ambiguous, unmatched };
+    }
+    if (res.reason === "ambiguous") ambiguous.push(decl.id);
+    else unmatched.push(decl.id);
   }
-  return null;
+
+  return { detected: null, ambiguous, unmatched };
 }
 
 /**
