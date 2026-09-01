@@ -215,14 +215,35 @@ describe("replays the recorded capability to success", () => {
     // The argument value. Replay takes the values discovery refused to record,
     // and logging them would undo that discipline at the sink.
     //
-    // `controlNames` is excluded from the search rather than exempted by
-    // hand-waving: it holds the names read *off the element*, and this
-    // dropdown's own text is "All Credit Debit" whatever argument is passed —
-    // it is there on the run that passed `Credit` and on the runs that passed
-    // nothing to it at all. Everything outside that field is searched.
+    // `controlNames` used to be excluded from this search, on the reasoning
+    // that it holds names read *off the element* and this dropdown's own text
+    // is "All Credit Debit" whatever argument is passed. True of this dropdown
+    // and the wrong generalisation: for a `<select>`, `controlNames` is the
+    // option set, so the argument value is by construction a member of it. The
+    // exclusion carved out the one field where a select's argument is
+    // guaranteed to land, and the field it carved out was the field with the
+    // leak in it. Nothing is excluded now.
+    expect(raw).not.toContain("Debit");
+
+    // The same leak one control along, and the reason a select-shaped fix would
+    // not have been enough: `link_12345`'s text is an account number, and it is
+    // read off the element by the same call. Searched on the `controlNames`
+    // field rather than on the whole line, because `link_12345` is also the
+    // *control name the artifact recorded*, which the trail records on purpose.
     for (const event of readEvents(run.logPath)) {
-      const { controlNames: _readOffThePage, ...rest } = event;
-      expect(JSON.stringify(rest)).not.toContain("Debit");
+      expect(JSON.stringify(event["controlNames"] ?? [])).not.toContain("12345");
+    }
+
+    // What is left in the field, and why it is safe to leave: only names a
+    // configured risk rule matched — text the policy author wrote a pattern
+    // for, rather than whatever the page happened to be carrying. This run
+    // touches a link, a dropdown and a submit button, none of which any rule in
+    // POLICY names, so every gate on it records an empty set and a digest.
+    const gates = readEvents(run.logPath).filter((e) => e["kind"] === "replay.gate" && "controlNames" in e);
+    expect(gates.length).toBeGreaterThan(0);
+    for (const g of gates) {
+      expect(g["controlNames"]).toEqual([]);
+      expect(typeof g["controlNamesDigest"]).toBe("string");
     }
     // And the argument's *name* is recorded, because a run whose inputs are
     // unknowable is not auditable.

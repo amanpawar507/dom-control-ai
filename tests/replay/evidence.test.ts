@@ -32,7 +32,10 @@ const FIND_PAGE = `<!doctype html>
   <input id="acct" data-testid="acct" name="accountId">
   <button id="find" type="button">Find</button>
   <button id="print" type="button">Print</button>
-  <div id="errorContainer" style="display:none">No matching record</div>
+  <div id="errorContainer" style="display:none">
+    <h1 class="title">Error!</h1>
+    <p class="error">An internal error has occurred and has been logged.</p>
+  </div>
   <div id="result" style="display:none"><span id="balance">-2300.00</span></div>
   <script>
     document.getElementById('find').addEventListener('click', function () {
@@ -238,6 +241,52 @@ describe("replay evidence — no argument value ever reaches the log", () => {
   // credential in a test file would be exactly the leak this suite exists to
   // catch, written by hand.
   const SECRET_ARG = "sk-QUITE-OBVIOUSLY-A-SECRET-9F3K2Q";
+  /** The option nobody selected. On a real account picker this is somebody else's account number. */
+  const OTHER_ACCOUNT = "sk-THE-OPTION-NOBODY-PICKED-4T7Z1";
+
+  /**
+   * A dropdown whose options are the data — an account picker, a payee list, a
+   * patient id. The label is deliberately unrelated to both options, so a name
+   * read from the label cannot be mistaken for a name read from the contents.
+   */
+  const PICK_PAGE = `<!doctype html>
+<html><body>
+  <label for="from">From account</label>
+  <select id="from" data-testid="from">
+    <option>${SECRET_ARG}</option>
+    <option>${OTHER_ACCOUNT}</option>
+  </select>
+</body></html>`;
+
+  function pickArtifact(): CapabilityArtifact {
+    return parseArtifact({
+      capability: {
+        id: "pick-account",
+        product: "fixtures",
+        version: 1,
+        goal: "choose an account",
+        inputs: { account: { type: "string" } },
+        outputs: {},
+        status: "approved",
+      },
+      flow: { steps: [{ kind: "act", action: "select", control: "from_select", value: "$account" }] },
+      bindings: {
+        tenant: "local",
+        variant: "baseline",
+        entryUrl: `${ORIGIN}/app/pick.htm`,
+        controls: {
+          from_select: {
+            scope: [],
+            chain: [
+              { tier: 0, by: "testid", value: "from" },
+              { tier: 2, by: "css", value: "#from" },
+            ],
+            fingerprint: { tag: "select" },
+          },
+        },
+      },
+    });
+  }
 
   it("carries no credential, token, or argument value — only the argument's name", async () => {
     const log = newLogger();
@@ -254,6 +303,41 @@ describe("replay evidence — no argument value ever reaches the log", () => {
     // The name survives — a run whose inputs are unknowable is not auditable —
     // and that is the whole of what is recorded about it.
     expect(raw).toContain("account");
+  });
+
+  it("carries no option of a select, argument or otherwise", async () => {
+    // The path the test above could never reach. It uses a `fill`, and a text
+    // input's `value` is deliberately never read as a name — so the argument
+    // had no route into the log to begin with and the test passed for a reason
+    // that does not generalise.
+    //
+    // A `<select>` is the case that does not hold: `controlNamesOf` reads the
+    // element's `textContent`, which for a select is every option concatenated,
+    // and the argument to a select step is by construction one of those
+    // options. Measured on the real target, the `from account` dropdown reads
+    // as one name: "1234512456125671267812789129001301113122132331334454321".
+    // Every account number the customer has, in a file, by a route the
+    // redactor has no pattern to key on.
+    //
+    // So the other option is asserted too. An argument value that leaks is one
+    // bug; a control whose contents leak is the bug, and the argument is only
+    // the part of it somebody happened to be looking for.
+    PAGES.set("/app/pick.htm", PICK_PAGE);
+    const log = newLogger();
+    const res = await replay({
+      page,
+      artifact: pickArtifact(),
+      args: { account: SECRET_ARG },
+      policy: policyWith(),
+      log,
+    });
+    // The step really ran, so the log really had the chance to record it.
+    expect(res.status).toBe("success");
+    expect(await page.locator("#from").inputValue()).toBe(SECRET_ARG);
+
+    const raw = readFileSync(log.path(), "utf8");
+    expect(raw).not.toContain(SECRET_ARG);
+    expect(raw).not.toContain(OTHER_ACCOUNT);
   });
 });
 

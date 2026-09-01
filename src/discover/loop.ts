@@ -7,6 +7,7 @@ import type { RunLogger } from "../evidence/logger.js";
 import { observe, OBS_ATTR, type Observation, type ObservedNode } from "../observe/snapshot.js";
 import { filterRendered } from "../observe/visibility.js";
 import { gate, type PolicyConfig } from "../policy/gate.js";
+import { controlNameEvidence } from "../policy/risk.js";
 import { controlNamesFor } from "../surface/playwright-web/actor.js";
 import type { Binding } from "../surface/types.js";
 import { BudgetExceeded, type Budget } from "./budget.js";
@@ -686,7 +687,12 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
       const controlNames = await controlNamesFor(loc);
       if (node.name !== "" && !controlNames.includes(node.name)) controlNames.push(node.name);
       const verdict = gate(policy, { url: page.url(), action: call.name, controlNames });
-      log.log({ kind: "discover.gate", tool: call.name, controlNames, verdict });
+      log.log({
+        kind: "discover.gate",
+        tool: call.name,
+        ...controlNameEvidence(page.url(), call.name, controlNames, policy.riskRules),
+        verdict,
+      });
       if (verdict.decision !== "allow") return halt("policy-refusal", { verdict });
 
       // Proven before the action — see property 3 on `discover`.

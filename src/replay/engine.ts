@@ -3,6 +3,7 @@ import type { Page } from "playwright";
 import type { CapabilityArtifact } from "../artifact/schema.js";
 import type { RunLogger } from "../evidence/logger.js";
 import { gate, type PolicyConfig } from "../policy/gate.js";
+import { controlNameEvidence } from "../policy/risk.js";
 import { controlNamesFor } from "../surface/playwright-web/actor.js";
 import { HANDLE_ATTR, locatorFor } from "../surface/playwright-web/resolver.js";
 import { filterRendered } from "../observe/visibility.js";
@@ -312,10 +313,21 @@ async function execute(opts: ReplayOptions): Promise<ReplayResult> {
     }
 
     // An action. Names come off the element, so a risk rule keyed on a control
-    // name judges what is really there rather than what the artifact says.
+    // name judges what is really there rather than what the artifact says —
+    // and what is written down about them is `controlNameEvidence`'s business,
+    // not this call site's. See the note there: the gate gets every name, the
+    // log gets the ones a rule matched, because a `<select>`'s names are its
+    // options and one of them is the argument.
     const controlNames = await controlNamesFor(loc);
     const verdict = gate(policy, { url: page.url(), action: step.action, controlNames });
-    log.log({ kind: "replay.gate", step: stepId, action: step.action, control: step.control, controlNames, verdict });
+    log.log({
+      kind: "replay.gate",
+      step: stepId,
+      action: step.action,
+      control: step.control,
+      ...controlNameEvidence(page.url(), step.action, controlNames, policy.riskRules),
+      verdict,
+    });
     if (verdict.decision === "escalate") {
       log.log({ kind: "replay.escalated", step: stepId, reason: verdict.reason });
       return { status: "escalated", interventionId: `${log.runId}:${stepId}`, reason: verdict.reason, evidence };
