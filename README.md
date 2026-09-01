@@ -76,9 +76,11 @@ Live in the repo: [`capabilities/parabank/…/1.0.0.json`](capabilities/).
 $0.06 total spend  across every live model run in the project
 ```
 
-**Replay reproduces.** Five live runs of the recorded capability, every one succeeding, every control resolving at the same tier every time — including the dropdown at tier 3, anchor geometry measured against rendered layout. The report is committed at [`docs/evidence/stability-report.json`](docs/evidence/stability-report.json).
+**Replay reproduces, and the instrument that says so was calibrated first.** Twenty live runs of the recorded capability, every one succeeding, every control resolving at the same tier every time — including the dropdown at tier 3, anchor geometry measured against rendered layout. [`docs/evidence/`](docs/evidence/)
 
-Worth being precise about what that shows, because the honest claim is narrower than the tempting one. Five sequential runs sharing one session in one process, a quarter-second apart, evidence **repeatability under fixed conditions** — they fail to disprove non-determinism rather than establishing determinism. Review measured the instrument: with one wait removed the target flakes about 7%, and 5-run reports still came back agreeing two times in three. A harness that can report divergence is the right shape; five runs is not yet a strong enough sample to lean on.
+A report of N agreeing runs, on its own, proves less than it looks: it fails to *disprove* non-determinism rather than establishing it, and a weak instrument returning a clean result is not evidence at all. So the harness was tested against a known fault before its clean result was believed. Removing a load-bearing wait — a fault measured elsewhere at 1.4–7% per run — produced `agreed: false`, two failures in twenty, four divergences **named rather than averaged into a pass rate**.
+
+That makes the claim precise: an instrument demonstrated capable of detecting a fault of this size reported no divergence across twenty runs.
 
 Phase 3 opened by closing the hole Phase 2 shipped knowingly. Record-time proving verified that every rung of a chain named the *same* element; replay had no counterpart, and its only guard was a `tag` fingerprint that tier 3 defeats by construction — `accepts: [tag]` guarantees a wrong element carries the right tag. The chain turned out to carry its own answer: every rung was independently proven against one element, so **two rungs naming different elements is evidence the surface moved**, and neither answer can be trusted. The ladder became a corroboration set, using evidence the artifact already held.
 
