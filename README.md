@@ -68,20 +68,34 @@ Live in the repo: [`capabilities/parabank/…/1.0.0.json`](capabilities/).
 
 ## Status
 
-**Phases 1 and 2 are complete.** The substrate and the discovery loop both work against a real application.
+**Phases 1, 2 and 3 are complete.** Record a capability with a model; replay it without one.
 
 ```
-289  unit tests    container-free, zero network calls
- 18  end-to-end    against a local ParaBank in Docker
+360  unit tests    container-free, zero network calls
+ 35  end-to-end    against a local ParaBank in Docker
 $0.06 total spend  across every live model run in the project
 ```
 
-**Phase 3 — the replay engine — is next**, and it inherits one known hole worth stating up front: identity is proven at *record* time only. At replay the sole guard is a `tag` fingerprint, which tier 3 defeats by construction. A binding that resolved correctly when recorded can resolve elsewhere on replay and nothing currently notices. That is Phase 3's first design problem, not a bug to patch.
+**Replay is deterministic, and that is evidenced rather than asserted.** Five live runs of the recorded capability, every one succeeding, every control resolving at the same tier every time — including the dropdown at tier 3, anchor geometry measured against rendered layout, reproducing identically five times. The report is committed at [`docs/evidence/stability-report.json`](docs/evidence/stability-report.json).
+
+Phase 3 opened by closing the hole Phase 2 shipped knowingly. Record-time proving verified that every rung of a chain named the *same* element; replay had no counterpart, and its only guard was a `tag` fingerprint that tier 3 defeats by construction — `accepts: [tag]` guarantees a wrong element carries the right tag. The chain turned out to carry its own answer: every rung was independently proven against one element, so **two rungs naming different elements is evidence the surface moved**, and neither answer can be trusted. The ladder became a corroboration set, using evidence the artifact already held.
+
+**Phase 4 is next**: the human-in-the-loop lease, the operator console, and the cross-tenant overlay demonstration.
 
 Full reasoning, including every judgment call and the errors made along the way:
 [**Phase 1 decision record**](docs/design/2026-08-16-phase-1-decision-record.md) · [design spec](docs/design/specs/2026-08-15-capability-recorder-design.md)
 
 ---
+
+## Replay it
+
+```bash
+npm run stability -- --runs 5     # replay the recorded capability N times, live
+```
+
+No model, no API key, no spend. The four outcomes it can reach — success, a business outcome, a hard failure, and a refusal when two proven rungs disagree — are exercised against the live application in `tests/e2e/replay-outcomes.test.ts`.
+
+A business outcome is a *successful call carrying a code*: "no such account" is the answer a caller asked for, not a crash, and the contract keeps them distinguishable.
 
 ## Run it yourself
 
@@ -92,7 +106,7 @@ npx playwright install chromium
 npm run target:up          # ParaBank in Docker on :8081
 npm run target:wait
 
-npm test                   # 289 unit tests — no container, no network
+npm test                   # 360 unit tests — no container, no network
 npm run test:e2e           # 18 against the live target
 ```
 
@@ -137,6 +151,8 @@ capabilities/    recorded artifacts, one file per version, human-diffable
 
 ## Not built yet, deliberately
 
-Replay engine and runtime-condition taxonomy (Phase 3). Human-in-the-loop lease and operator console (Phase 4). Cross-tenant overlay demonstration. Desktop surface adapter — the `Surface` seam exists to make it credible without building it.
+Human-in-the-loop lease and operator console (Phase 4). Cross-tenant overlay demonstration — `applyOverlay` enforces the invariant that a tenant may modify bindings only, but no second tenant has been recorded against. Desktop surface adapter — the `Surface` seam exists to make it credible without building it.
+
+Two limits worth naming rather than discovering. A single-rung binding has nothing to corroborate it, and reports so. And correlated drift — where a whole page moves together and every rung agrees on the wrong element — is not closable with the evidence an artifact holds.
 
 [REPORT.md](./REPORT.md) is the submission write-up and is assigned to Phase 4, once there is a whole system to describe.
