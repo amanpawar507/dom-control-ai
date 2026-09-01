@@ -764,6 +764,17 @@ ladder, and it uses evidence the artifact already holds — no new recorded fiel
 no new schema. It costs a full chain walk per control instead of an early exit,
 which is the right trade when determinism is the product.
 
+**What the stability harness can and cannot show.** It reports whether N runs
+agree on status and on resolved tier per control, and it can name a divergence
+rather than averaging it into a pass rate — which is the property that makes it
+evidence at all. What it cannot do is establish determinism from a small sample:
+runs taken sequentially, in one process, sharing a session, seconds apart, hold
+most of the environment fixed. Measured on this target, a deliberately removed
+wait produced roughly 7% flake that a five-run report missed two times in three.
+So a passing report is a failure to disprove non-determinism, which is weaker
+than a demonstration of it, and the honest way to strengthen it is more runs
+across more varied conditions rather than a more confident sentence.
+
 Two limits are inherent and stated rather than hidden. A single-rung binding has
 nothing to corroborate it, and reports how many rungs agreed so a reader can see
 the difference. And correlated drift — a page that moves as a whole, where every
