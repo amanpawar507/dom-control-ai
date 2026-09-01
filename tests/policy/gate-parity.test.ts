@@ -47,6 +47,16 @@ describe("policy is decided in exactly one place", () => {
     // And it searched raw source for `gate(`, so the word appearing in a
     // *comment* satisfied it. Comments are stripped first; a module now has to
     // actually call it.
+    //
+    // What this still cannot see, stated rather than left to be rediscovered:
+    // the verbs below are all side-effecting, and `extract` is a read. A module
+    // that reads a value off the page without a verdict passes this test, and
+    // the replay engine did exactly that for a phase while the discovery actor
+    // gated the same `ActionType`. Per-action parity is behavioural and lives
+    // where the two engines run: `tests/replay/engine.test.ts` ("refuses an
+    // extract the allowlist does not permit") and `tests/surface/actor.test.ts`
+    // ("treats extract as a read: gated, logged"). Both need a page, which is
+    // why neither is here.
     const ACTS =
       /(?:\.click\(|\.fill\(|\.selectOption\(|\.goto\(|\.press\(|\.check\(|\.uncheck\(|\.dispatchEvent\(|\.setInputFiles\(|\.goBack\(|\.goForward\(|keyboard\.type\()/;
     const EXEMPT = new Set([
