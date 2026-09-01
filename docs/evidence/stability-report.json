@@ -1,8 +1,8 @@
 {
-  "n": 5,
+  "n": 20,
   "runs": [
     {
-      "runId": "replay-e2e-1788211609374-1",
+      "runId": "replay-e2e-1788298981445-1",
       "status": "success",
       "tiers": {
         "link_12345": 1,
@@ -11,7 +11,7 @@
       }
     },
     {
-      "runId": "replay-e2e-1788211609700-2",
+      "runId": "replay-e2e-1788298981724-2",
       "status": "success",
       "tiers": {
         "link_12345": 1,
@@ -20,7 +20,7 @@
       }
     },
     {
-      "runId": "replay-e2e-1788211609990-3",
+      "runId": "replay-e2e-1788298981966-3",
       "status": "success",
       "tiers": {
         "link_12345": 1,
@@ -29,7 +29,7 @@
       }
     },
     {
-      "runId": "replay-e2e-1788211610270-4",
+      "runId": "replay-e2e-1788298982203-4",
       "status": "success",
       "tiers": {
         "link_12345": 1,
@@ -38,7 +38,142 @@
       }
     },
     {
-      "runId": "replay-e2e-1788211610532-5",
+      "runId": "replay-e2e-1788298982453-5",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298982694-6",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298982928-7",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298983163-8",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298983422-9",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298983657-10",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298983892-11",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298984126-12",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298984389-13",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298984630-14",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298984883-15",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298985133-16",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298985380-17",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298985642-18",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298985891-19",
+      "status": "success",
+      "tiers": {
+        "link_12345": 1,
+        "combobox_all_credit_debit": 3,
+        "button_go": 1
+      }
+    },
+    {
+      "runId": "replay-e2e-1788298986157-20",
       "status": "success",
       "tiers": {
         "link_12345": 1,
