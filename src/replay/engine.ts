@@ -1,7 +1,8 @@
 // src/replay/engine.ts
-import type { Page } from "playwright";
+import type { Locator, Page } from "playwright";
 import type { CapabilityArtifact } from "../artifact/schema.js";
 import type { RunLogger } from "../evidence/logger.js";
+import type { ActionType } from "../policy/allowlist.js";
 import { gate, type PolicyConfig } from "../policy/gate.js";
 import { controlNameEvidence } from "../policy/risk.js";
 import { controlNamesFor } from "../surface/playwright-web/actor.js";
@@ -303,6 +304,16 @@ async function execute(opts: ReplayOptions): Promise<ReplayResult> {
     }
 
     if (step.kind === "extract") {
+      // Gated before it reads, not after. Reading is not an effect on the page
+      // and it is still an action with consequences — it is how data leaves the
+      // application — which is why `extract` is an `ActionType` the allowlist
+      // can refuse at all, and why the discovery actor has always gated it
+      // (`src/surface/playwright-web/actor.ts`: "Reading is not an effect. The
+      // gate still ran"). This engine did not, so one policy object meant two
+      // things depending on which engine read it, and the engine that ignored
+      // it is the one that runs unattended.
+      const refusal = await gateOn(stepId, "extract", step.control, loc);
+      if (refusal !== null) return refusal;
       const value = ((await loc.textContent()) ?? "").trim() || (await loc.inputValue().catch(() => ""));
       outputs[step.as] = value;
       // The name of the output, never the value: an extracted value is the
@@ -312,29 +323,9 @@ async function execute(opts: ReplayOptions): Promise<ReplayResult> {
       continue;
     }
 
-    // An action. Names come off the element, so a risk rule keyed on a control
-    // name judges what is really there rather than what the artifact says —
-    // and what is written down about them is `controlNameEvidence`'s business,
-    // not this call site's. See the note there: the gate gets every name, the
-    // log gets the ones a rule matched, because a `<select>`'s names are its
-    // options and one of them is the argument.
-    const controlNames = await controlNamesFor(loc);
-    const verdict = gate(policy, { url: page.url(), action: step.action, controlNames });
-    log.log({
-      kind: "replay.gate",
-      step: stepId,
-      action: step.action,
-      control: step.control,
-      ...controlNameEvidence(page.url(), step.action, controlNames, policy.riskRules),
-      verdict,
-    });
-    if (verdict.decision === "escalate") {
-      log.log({ kind: "replay.escalated", step: stepId, reason: verdict.reason });
-      return { status: "escalated", interventionId: `${log.runId}:${stepId}`, reason: verdict.reason, evidence };
-    }
-    if (verdict.decision !== "allow") {
-      return fail(stepId, `to ${step.action} ${step.control}`, verdict.reason, "policy-refusal");
-    }
+    // An action.
+    const refusal = await gateOn(stepId, step.action, step.control, loc);
+    if (refusal !== null) return refusal;
 
     let value: string | undefined;
     if (step.kind === "act" && (step.action === "fill" || step.action === "select")) {
@@ -362,6 +353,50 @@ async function execute(opts: ReplayOptions): Promise<ReplayResult> {
 
   log.log({ kind: "replay.success", outputs: Object.keys(outputs) });
   return { status: "success", outputs, evidence };
+
+  /**
+   * The gate, for every step that lands on a resolved element — `null` when the
+   * step may proceed, and the result the run ends in when it may not.
+   *
+   * One function rather than a copy per step kind, because the copies were how
+   * `extract` came to be ungated: the acting branch grew a gate and the
+   * extracting branch was written next to it without one, and nothing about
+   * either branch said the other existed. A step kind added later has to go
+   * through here to reach an element, and gets the verdict, the evidence line
+   * and the escalation path with it.
+   *
+   * Names come off the element, so a risk rule keyed on a control name judges
+   * what is really there rather than what the artifact says. What is written
+   * down about them is `controlNameEvidence`'s business, not this call site's:
+   * the gate gets every name, the log gets the ones a rule matched, because a
+   * `<select>`'s names are its options and one of them is the argument.
+   */
+  async function gateOn(
+    stepId: string,
+    action: ActionType,
+    control: string,
+    loc: Locator,
+  ): Promise<ReplayResult | null> {
+    const url = page.url();
+    const controlNames = await controlNamesFor(loc);
+    const verdict = gate(policy, { url, action, controlNames });
+    log.log({
+      kind: "replay.gate",
+      step: stepId,
+      action,
+      control,
+      ...controlNameEvidence(url, action, controlNames, policy.riskRules),
+      verdict,
+    });
+    if (verdict.decision === "escalate") {
+      log.log({ kind: "replay.escalated", step: stepId, reason: verdict.reason });
+      return { status: "escalated", interventionId: `${log.runId}:${stepId}`, reason: verdict.reason, evidence };
+    }
+    if (verdict.decision !== "allow") {
+      return fail(stepId, `to ${action} ${control}`, verdict.reason, "policy-refusal");
+    }
+    return null;
+  }
 
   /**
    * Look for a declared condition, and record what the landmarks did even when

@@ -813,6 +813,52 @@ describe("replay — the entry and the gate", () => {
     expect(page.url()).toBe(`${ORIGIN}/app/second.htm`);
     expect((await pageState()).printed).toBe(true);
   });
+
+  it("refuses an extract the allowlist does not permit, and reads nothing", async () => {
+    // Replay used to run its extract branch without a gate at all, while the
+    // discovery actor gated the same `ActionType` and said so in a comment. One
+    // policy object, two engines, two answers — and the engine that ignored it
+    // is the one that runs unattended. Reading a value off a page is how data
+    // leaves the application; the allowlist has an `extract` action because
+    // somebody decided that, and this is where the decision takes effect.
+    //
+    // Everything else the flow does stays permitted, so the run reaches the
+    // extract and is refused *there*, rather than being stopped early by an
+    // allowlist so narrow that it proves nothing about this step.
+    const log = newLogger();
+    const res = await replay({
+      page,
+      artifact: findArtifact(),
+      args: { account: "12345" },
+      policy: policyWith({
+        allowlist: { origins: [ORIGIN], paths: ["/app/**"], actions: ["navigate", "click", "fill", "select"] },
+      }),
+      log,
+    });
+
+    expect(res.status).toBe("failed");
+    if (res.status !== "failed") return;
+    expect(res.classification).toBe("policy-refusal");
+    expect(res.stepId).toContain("result_balance");
+    expect(res.observed).toContain("action not allowed: extract");
+
+    const events = readFileSync(log.path(), "utf8")
+      .split("\n")
+      .filter((l) => l !== "")
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+
+    // The verdict was recorded, on the step it was reached for.
+    const extractGate = events.find((e) => e["kind"] === "replay.gate" && e["action"] === "extract");
+    expect(extractGate).toMatchObject({ control: "result_balance", verdict: { decision: "refuse" } });
+
+    // And the read never happened: refusing after reading would leave the value
+    // already out of the application, which is the whole thing being refused.
+    expect(events.some((e) => e["kind"] === "replay.extract")).toBe(false);
+
+    // The steps before it did run, so this is a refusal of the extract rather
+    // than a run that never got near one.
+    expect((await pageState()).filled).toBe("12345");
+  });
 });
 
 describe("replay — evidence", () => {
