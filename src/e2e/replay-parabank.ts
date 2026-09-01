@@ -17,7 +17,6 @@ import { replay } from "../replay/engine.js";
 import { loadCapability } from "../replay/load.js";
 import type { ReplayResult } from "../replay/result.js";
 import { ParabankSessionProvider } from "../session/playwright-state.js";
-import type { Strategy } from "../surface/types.js";
 
 export const BASE = "http://localhost:8081/parabank";
 
@@ -76,72 +75,24 @@ export const POLICY: PolicyConfig = {
 };
 
 /**
- * Where each of spec §7's conditions actually shows up on the two pages this
- * capability walks, verified against the live container rather than inferred.
+ * Spec §7's seven conditions, unmodified.
  *
- * `SEVEN_CONDITIONS` says so itself: its `locate` values are grounded in the
- * fixtures under `tests/fixtures/parabank/` where a fixture exists and are
- * reasonable placeholders where none does, and "a capability recorded by a live
- * discovery run would supply the actual selectors". This is that supply. The
- * taxonomy — the ids, classes, codes and messages — is not restated here; it is
- * mapped over below, so this table can change where a condition *is* without
- * ever changing what a condition *means*.
+ * This used to be `SEVEN_CONDITIONS` with a `LIVE_LANDMARKS` overlay mapped
+ * over it, because two rows of the shipped table pointed at markup that means
+ * something else on this target: `record-not-found` at `#errorContainer` and
+ * `permission-denial` at a heading reading "Error!", both of which are this
+ * application's generic internal-error region. The overlay corrected them —
+ * here, for this one caller, while the module it derived from went on shipping
+ * the defect to everybody else. That is a fix at a call site rather than at the
+ * source, and the source is where it now is (`src/replay/conditions.ts`): the
+ * default table carries the live-verified selectors, and there is nothing left
+ * for this file to correct.
  *
- * `null` means the condition has no landmark on this target and is declared
- * undetectable here rather than pointed at something that only resembles it.
+ * Kept as a named export rather than deleted so the live composition still says
+ * out loud which table it runs against, and so a future target-specific
+ * landmark has an obvious place to go.
  */
-const LIVE_LANDMARKS: Record<string, Strategy | null> = {
-  /**
-   * The application answering "there are none", in its own words and by its own
-   * branch: on an empty result ParaBank shows `#noTransactions` and hides
-   * `#transactionTable`.
-   *
-   * Both halves are in the selector on purpose. `#noTransactions` alone is
-   * *shipped visible* in the activity page's markup and stays visible until the
-   * page's first XHR returns, so a detector keyed on it fires during the load
-   * of a perfectly ordinary page — measured against the live container, not
-   * feared — and a run that clicked through to an account would report "no
-   * records" before it had asked anything. The transaction table carries no
-   * inline style until jQuery hides it, so requiring `display: none` there is
-   * what distinguishes the empty *answer* from the empty *interval before* an
-   * answer.
-   */
-  "record-not-found": {
-    tier: 2,
-    by: "css",
-    value: '#accountActivity:has(table#transactionTable[style*="display: none"]) p#noTransactions',
-  },
-  /**
-   * ParaBank's own error regions: `#error` on the activity page, `#showError` on
-   * the accounts overview. Both ship `display: none` and are revealed only by
-   * the page's own failure handler, so the visibility gate does the rest.
-   */
-  "application-error": { tier: 2, by: "css", value: "#error, #showError" },
-  /**
-   * No landmark on this target, and deliberately not the one `SEVEN_CONDITIONS`
-   * carries. That row locates a heading reading "Error!" — which on ParaBank is
-   * the *generic* title of both error regions above, shown for a 500 as readily
-   * as for anything else. Declaring it here would classify every server fault as
-   * a business-class permission denial, and `detect` stops at the first row that
-   * matches, so it would win over the honest classification below it. A wrong
-   * answer beats no answer nowhere in this codebase.
-   */
-  "permission-denial": null,
-};
-
-/**
- * Spec §7's seven conditions, relocated onto this target. Derived from
- * `SEVEN_CONDITIONS` rather than rewritten, so the taxonomy has exactly one
- * definition and this file cannot quietly drop a row from it.
- */
-export const PARABANK_CONDITIONS: ConditionDecl[] = SEVEN_CONDITIONS.map((decl) => {
-  if (!Object.prototype.hasOwnProperty.call(LIVE_LANDMARKS, decl.id)) return decl;
-  const landmark = LIVE_LANDMARKS[decl.id];
-  // `exactOptionalPropertyTypes`: an absent `locate` and one holding `undefined`
-  // are different types, so the key is dropped rather than assigned.
-  const { locate: _replaced, ...rest } = decl;
-  return landmark === null || landmark === undefined ? rest : { ...rest, locate: landmark };
-});
+export const PARABANK_CONDITIONS: ConditionDecl[] = SEVEN_CONDITIONS;
 
 /** The recorded artifact, read off disk and validated on the way in. */
 export function loadRecordedCapability(root: string = process.cwd()): CapabilityArtifact {

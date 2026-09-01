@@ -35,9 +35,11 @@ export interface DetectedCondition {
  * the words a caller sees are the ones the artifact author chose, not
  * whatever happens to be rendered this run.
  *
- * `locate` is absent only for `transient-slowness` in `SEVEN_CONDITIONS`
- * below — see the note there for why that one condition has no landmark to
- * look for.
+ * `locate` is optional, and a row without one is a condition this target has no
+ * verified landmark for. Two rows in `SEVEN_CONDITIONS` below go without:
+ * `transient-slowness`, whose signal is a budget expiring rather than a node,
+ * and `permission-denial`, which this application does not distinguish from any
+ * other fault. Both notes are at the rows.
  */
 export interface ConditionDecl {
   id: string;
@@ -48,8 +50,8 @@ export interface ConditionDecl {
 }
 
 /**
- * Whether a declared condition is confirmed present, checked in declaration
- * order and stopping at the first hit.
+ * Whether a declared condition is confirmed present, checked in
+ * fault-before-answer order and stopping at the first hit.
  *
  * ## Visibility-gating, and why this delegates rather than re-implements it
  *
@@ -84,6 +86,14 @@ export interface ConditionDecl {
  * `fingerprintHolds` inside `resolveBinding` is a no-op here: no
  * `ConditionDecl` declares a fingerprint, so every rung's shape check passes
  * trivially and the only thing being asked is "does this exist, rendered".
+ *
+ * ## Why a business row can never outrank a non-business one
+ *
+ * See `orderedForDetection` below. First-match-wins is a tie-break between
+ * rows of equal standing, and business rows do not have equal standing with
+ * the rest: a `business` result is a claim that the call *succeeded* and is
+ * carrying an answer, so it must not be produced while the page is also
+ * showing evidence that it did not.
  */
 export async function detect(page: Page, declared: ConditionDecl[]): Promise<DetectedCondition | null> {
   return (await detectWithDiagnostics(page, declared)).detected;
@@ -118,6 +128,33 @@ export interface DetectionDiagnostics {
   unmatched: string[];
 }
 
+/**
+ * The declared rows, reordered so that every non-`business` row is checked
+ * before every `business` one, with declaration order preserved inside each
+ * group.
+ *
+ * The two classes answer different questions and only one of them is a claim
+ * about the *call*. A `recoverable` row says the application is in an
+ * exceptional state; a `business` row says the application answered, and the
+ * answer is this code. So when a fault landmark and an answer landmark are both
+ * on the page, the fault is the only one of the two that can be true — an
+ * application that has just rendered its own internal-error banner has not
+ * answered anybody's question, and reporting `RECORD_NOT_FOUND` off the back of
+ * it hands the caller a fabricated answer that nothing downstream can tell from
+ * a real one. That is strictly worse than an honest failure, which is the same
+ * reason `detect` abstains on an ambiguous landmark rather than guessing.
+ *
+ * Ordering is a *second* line, not the fix on its own: a business row whose
+ * landmark points at markup that means something else is still wrong when it is
+ * the only row that matches, which is why the table below carries the rule that
+ * a business row's landmark must be verified to mean that outcome and nothing
+ * else. This is what stops the next author's table from re-earning the same
+ * defect by declaring their business rows first.
+ */
+function orderedForDetection(declared: ConditionDecl[]): ConditionDecl[] {
+  return [...declared.filter((d) => d.class !== "business"), ...declared.filter((d) => d.class === "business")];
+}
+
 export async function detectWithDiagnostics(
   page: Page,
   declared: ConditionDecl[],
@@ -125,7 +162,7 @@ export async function detectWithDiagnostics(
   const ambiguous: string[] = [];
   const unmatched: string[] = [];
 
-  for (const decl of declared) {
+  for (const decl of orderedForDetection(declared)) {
     if (decl.locate === undefined) continue;
     const res = await resolveBinding(page, { scope: [], chain: [decl.locate] }, {});
     if (res.ok) {
@@ -144,15 +181,30 @@ export async function detectWithDiagnostics(
  * `detect` applies is uniform; this is the data half, and where it is
  * grounded in a real element on this target that is noted per row.
  *
- * These `locate` values are illustrative declarations of the *shape* each
- * condition takes, grounded where a fixture confirms the real markup
- * (`tests/fixtures/parabank/*.html`) and left as reasonable placeholders
- * where it does not — this phase has no live network access to verify
- * against the running container (see the phase constraints). A capability
- * recorded by a live discovery run would supply the actual selectors; what
- * this table pins is that the taxonomy is complete and classified correctly,
- * per the third test below, not that every selector has been checked against
- * a browser.
+ * ## A business row may not carry a placeholder landmark
+ *
+ * The rule this table did not have, and the one that let the original version
+ * report ParaBank's internal-error banner as `RECORD_NOT_FOUND`: a
+ * **business** row's landmark must be verified to mean that outcome *and
+ * nothing else*, and ships without a `locate` when nothing on the target
+ * qualifies. A recoverable row can afford an approximate landmark — the worst
+ * it produces is a bounded recovery attempt and then an honest failure. A
+ * business row cannot: it ends the run reporting that the application answered
+ * and this is the answer, so a landmark that only *resembles* the outcome
+ * manufactures a wrong answer, and a wrong answer is the one failure nothing
+ * downstream can detect. `record-not-found` was pointed at `#errorContainer`
+ * and `permission-denial` at a heading reading "Error!" — which are, on this
+ * target, both halves of the same internal-error region
+ * (`tests/fixtures/parabank/findtrans.html:202`, `transfer.html:116`), shown
+ * for a 500 as readily as for anything else.
+ *
+ * Every `locate` below is now checked against this target rather than inferred:
+ * against the captured markup under `tests/fixtures/parabank/` where a fixture
+ * exists, and against the running container where one does not (the pages the
+ * recorded capability actually walks have no fixture — see the per-row notes).
+ * A capability recorded elsewhere would supply its own selectors; what this
+ * table pins is that the taxonomy is complete, classified correctly, and that
+ * no row here claims a meaning its landmark does not have.
  */
 export const SEVEN_CONDITIONS: ConditionDecl[] = [
   {
@@ -169,16 +221,49 @@ export const SEVEN_CONDITIONS: ConditionDecl[] = [
     class: "business",
     code: "RECORD_NOT_FOUND",
     message: "No matching record was found.",
-    // tests/fixtures/parabank/findtrans.html: `<div id="errorContainer"
-    // style="display: none;">`, shown when a search comes back empty or fails.
-    locate: { tier: 2, by: "css", value: "#errorContainer" },
+    /**
+     * The application answering "there are none", in its own words and by its
+     * own branch: on an empty result ParaBank shows `#noTransactions` and hides
+     * `#transactionTable`. Verified against the running container — the account
+     * activity page carries no fixture, because it is the page the recorded
+     * capability walks and was captured as a binding rather than as markup.
+     *
+     * Both halves are in the selector on purpose. `#noTransactions` alone is
+     * *shipped visible* in the activity page's markup and stays visible until
+     * the page's first XHR returns, so a detector keyed on it fires during the
+     * load of a perfectly ordinary page and a run that clicked through to an
+     * account would report "no records" before it had asked anything. The
+     * transaction table carries no inline style until jQuery hides it, so
+     * requiring `display: none` there is what distinguishes the empty *answer*
+     * from the empty *interval before* an answer.
+     *
+     * What this is deliberately NOT: `#errorContainer`, which the first version
+     * of this row declared. That region is `<h1>Error!</h1><p>An internal error
+     * has occurred and has been logged.</p>` (findtrans.html:202) and is shown
+     * by the page's own handler on any non-404 response — the 404, which is the
+     * empty answer, takes the other branch entirely (findtrans.html:238-241).
+     * It belongs to `application-error` below, and it is there.
+     */
+    locate: {
+      tier: 2,
+      by: "css",
+      value: '#accountActivity:has(table#transactionTable[style*="display: none"]) p#noTransactions',
+    },
   },
   {
     id: "permission-denial",
     class: "business",
     code: "PERMISSION_DENIED",
     message: "The account is not permitted to perform this action.",
-    locate: { tier: 1, by: "role", role: "heading", name: "Error!" },
+    // No `locate`, and the second row in this table to go without one. This
+    // target has no landmark that means "not permitted": it answers an
+    // unauthorised request with the same generic internal-error region as
+    // anything else, whose only distinguishing text is the title "Error!". A
+    // heading-named landmark was declared here and it matched that region on
+    // both captured fixtures — classifying every server fault as a business
+    // outcome. Under the rule at the head of this table a business row with
+    // nothing verified to point at ships pointing at nothing, so a caller whose
+    // application *does* distinguish the two declares it and this one abstains.
   },
   {
     id: "unexpected-dialog",
@@ -219,9 +304,22 @@ export const SEVEN_CONDITIONS: ConditionDecl[] = [
     class: "recoverable",
     code: "APPLICATION_ERROR",
     message: "The application displayed an internal error banner.",
-    // tests/fixtures/parabank/transfer.html: `<div id="showError" style="display:
-    // none;">`, shown by the page's own `showError` handler on a failed XHR;
-    // referenced in src/e2e/phase1-smoke.ts's own comment on the same element.
-    locate: { tier: 2, by: "css", value: "#showError" },
+    /**
+     * All three ids this target spells its one internal-error region with, and
+     * every page the replay can be on is covered by one of them: `#showError`
+     * on the accounts overview and the transfer page
+     * (`tests/fixtures/parabank/transfer.html:116`, referenced by
+     * `src/e2e/phase1-smoke.ts`), `#errorContainer` on find-transactions
+     * (`findtrans.html:202`), `#error` on account activity. All three ship
+     * `display: none` and are revealed only by the page's own failure handler,
+     * so the visibility gate does the rest; all three were confirmed present
+     * on the running container, one per page, so the union cannot resolve
+     * ambiguously.
+     *
+     * Two of them used to belong to business rows above. This is where the
+     * honest classification of a stack trace lives: `recoverable`, so §7's
+     * renavigate response is reachable, and never an answer.
+     */
+    locate: { tier: 2, by: "css", value: "#error, #showError, #errorContainer" },
   },
 ];

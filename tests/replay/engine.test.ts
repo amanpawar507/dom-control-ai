@@ -34,11 +34,25 @@ const PAGES = new Map<string, string>();
 
 /**
  * The ordinary fixture: an account lookup with a result panel, an empty-result
- * region, and a second button whose only job is to leave a mark on the page.
+ * region, an internal-error region, and a second button whose only job is to
+ * leave a mark on the page.
  *
- * `#errorContainer` is the exact selector `SEVEN_CONDITIONS`' `record-not-found`
- * row declares, so the business-outcome path here is the declared taxonomy
- * firing rather than a detector written for this test.
+ * The three regions are the shapes `SEVEN_CONDITIONS` declares, copied from the
+ * target rather than invented for the test — which is the correction the final
+ * review demanded of the previous version. That one carried a single `<div
+ * id="errorContainer">No matching record</div>`: the selector the
+ * `record-not-found` row declared, with content written to match the row's
+ * *meaning*. On the real application `#errorContainer` is the internal-error
+ * banner (`tests/fixtures/parabank/findtrans.html:202`), so the fixture agreed
+ * with the declaration and both disagreed with the target, and no test in this
+ * file could see it.
+ *
+ * So the empty answer is now the target's own empty-answer branch — the
+ * transaction table hidden and `#noTransactions` left standing — and it is
+ * shipped in the state ParaBank ships it: `#noTransactions` *visible* from the
+ * start, table not yet hidden. That interval is the hazard the two-part
+ * selector exists for, and every run in this file passes through it, because
+ * detection runs after the first `fill` while the page is still in it.
  *
  * `#printed` is what makes "did the run stop" answerable against the page. A
  * result whose status says `business_outcome` is equally consistent with the
@@ -52,13 +66,27 @@ const FIND_PAGE = `<!doctype html>
   <input id="acct" data-testid="acct" name="accountId">
   <button id="find" type="button">Find</button>
   <button id="print" type="button">Print</button>
-  <div id="errorContainer" style="display:none">No matching record</div>
+  <div id="accountActivity">
+    <table id="transactionTable"><tbody id="transactionBody"></tbody></table>
+    <p id="noTransactions">No transactions found.</p>
+  </div>
+  <div id="errorContainer" style="display:none">
+    <h1 class="title">Error!</h1>
+    <p class="error">An internal error has occurred and has been logged.</p>
+  </div>
   <div id="result" style="display:none"><span id="balance">-2300.00</span></div>
   <script>
     document.getElementById('find').addEventListener('click', function () {
       var v = document.getElementById('acct').value;
-      if (v === '12345') { document.getElementById('result').style.display = 'block'; }
-      else { document.getElementById('errorContainer').style.display = 'block'; }
+      if (v === '12345') {
+        document.getElementById('noTransactions').style.display = 'none';
+        document.getElementById('transactionBody').innerHTML = '<tr><td>a transaction</td></tr>';
+        document.getElementById('result').style.display = 'block';
+      } else if (v === '99999') {
+        document.getElementById('transactionTable').style.display = 'none';
+      } else {
+        document.getElementById('errorContainer').style.display = 'block';
+      }
     });
     document.getElementById('print').addEventListener('click', function () {
       var s = document.createElement('span');
@@ -240,17 +268,25 @@ async function pageState(): Promise<{
   printed: boolean;
   resultShown: boolean;
   errorShown: boolean;
+  emptyAnswerShown: boolean;
 }> {
   return page.evaluate(() => {
     const acct = document.querySelector("#acct");
     const result = document.querySelector("#result");
     const err = document.querySelector("#errorContainer");
+    const table = document.querySelector("#transactionTable");
+    const none = document.querySelector("#noTransactions");
     return {
       url: location.href,
       filled: acct === null ? "<no field>" : (acct as HTMLInputElement).value,
       printed: document.querySelector("#printed") !== null,
       resultShown: result !== null && window.getComputedStyle(result).display !== "none",
       errorShown: err !== null && window.getComputedStyle(err).display !== "none",
+      emptyAnswerShown:
+        table !== null &&
+        none !== null &&
+        window.getComputedStyle(table).display === "none" &&
+        window.getComputedStyle(none).display !== "none",
     };
   });
 }
@@ -294,9 +330,39 @@ describe("replay — the four result shapes", () => {
     expect(res.code).toBe("RECORD_NOT_FOUND");
 
     const state = await pageState();
-    expect(state.errorShown).toBe(true);
+    expect(state.emptyAnswerShown).toBe(true);
+    expect(state.errorShown).toBe(false);
     expect(state.printed).toBe(false);
     expect(state.resultShown).toBe(false);
+  });
+
+  it("calls the application's own internal-error banner a fault, not an answer", async () => {
+    // The defect the final review found, pinned at the engine: the same click,
+    // the same declared table, and a page that answers with a stack trace
+    // instead of a record. `#errorContainer` used to be the `record-not-found`
+    // landmark, so this run ended `business_outcome` / `RECORD_NOT_FOUND` — a
+    // caller told "no matching record" for a question the application never
+    // answered, and nothing downstream could tell it from the truth.
+    //
+    // Asserted on the *class* rather than only on the status: a business
+    // outcome is a claim that the call succeeded, and no page showing this
+    // banner has succeeded at anything.
+    const res = await replay({
+      page,
+      artifact: findArtifact(),
+      args: { account: "50000" },
+      policy: policyWith(),
+      log: newLogger(),
+    });
+
+    expect(res.status).toBe("failed");
+    if (res.status !== "failed") return;
+    expect(res.observed).toContain("APPLICATION_ERROR");
+    expect(res.classification).toBe("hard");
+
+    const state = await pageState();
+    expect(state.errorShown).toBe(true);
+    expect(state.printed).toBe(false);
   });
 
   it("escalates rather than acting when the gate refuses", async () => {

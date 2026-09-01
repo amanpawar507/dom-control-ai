@@ -301,13 +301,12 @@ describe("returns a business outcome when the application answers with no record
     const events = readEvents(run.logPath);
     const kinds = events.map((e) => e["kind"]);
 
-    // Every step of the recorded flow ran: the account was opened, the argument
-    // applied, the filter submitted, the checkpoint verified. So the outcome is
-    // an answer to the question this run actually asked, rather than something
-    // seen on a page it never got past.
+    // Every acting step of the recorded flow ran: the account was opened, the
+    // argument applied, the filter submitted. So the outcome is an answer to
+    // the question this run actually asked, rather than something seen on a
+    // page it never got past.
     const acted = events.filter((e) => e["kind"] === "replay.acted");
     expect(acted.map((e) => e["control"])).toEqual(["link_12345", "combobox_all_credit_debit", "button_go"]);
-    expect(kinds).toContain("replay.checkpoint");
 
     // And it ended there, reported as an outcome rather than as a completed run.
     // The two are mutually exclusive by construction and the trail shows which
@@ -316,15 +315,28 @@ describe("returns a business outcome when the application answers with no record
     const outcome = events.find((e) => e["kind"] === "replay.business_outcome");
     expect(outcome).toMatchObject({ code: "RECORD_NOT_FOUND" });
 
-    // Which step saw it, recorded because it is a fact about this artifact
-    // worth knowing: the condition is not detected on the step that submits the
-    // filter but on the one after it — ParaBank has not answered yet when the
-    // click returns. The recorded flow's last step is therefore the one that
-    // catches the answer, which is why "the walk stops here" has nothing after
-    // it to demonstrate on this capability. That property is proven
-    // container-free in tests/replay/engine.test.ts, on a flow with a step
-    // after the trigger.
-    expect(outcome?.["step"]).toBe("s5:checkpoint:combobox_all_credit_debit");
+    // Not *which* step saw it — that is a race, and this assertion used to pin
+    // one side of it. ParaBank answers the filter over XHR, so whether the
+    // answer has landed by the detection that follows the `Go` click depends on
+    // how long that detection takes to reach the `record-not-found` row.
+    // Measured, with the sample: 4/4 runs caught it at `s5:checkpoint` while
+    // business rows were checked first, and 8/8 at `s4:click:button_go` once
+    // fault rows moved ahead of them (C1) and the row was three round trips
+    // further down the list. Nothing about the outcome changed; three
+    // milliseconds of detection did.
+    //
+    // What is true either way, and is the thing worth asserting: the answer was
+    // not seen before the question was finished being asked. The last acting
+    // step is `s4`, and the outcome is on that step or a later one.
+    const stepNumber = (id: unknown): number => Number(/^s(\d+):/.exec(String(id))?.[1] ?? NaN);
+    const lastActed = acted.at(-1)?.["step"];
+    expect(lastActed).toBe("s4:click:button_go");
+    expect(stepNumber(outcome?.["step"])).toBeGreaterThanOrEqual(stepNumber(lastActed));
+
+    // "The walk stops here" has nothing after it to demonstrate on this
+    // capability, because the answer arrives on or after its last acting step.
+    // That property is proven container-free in tests/replay/engine.test.ts, on
+    // a flow with a step after the trigger.
   });
 });
 
