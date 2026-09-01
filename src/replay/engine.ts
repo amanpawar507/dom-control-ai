@@ -70,14 +70,33 @@ export interface ReplayOptions {
    * on the page *yet* is the transient-slowness case, and there is no reason
    * `extract` should be less patient than `checkpoint` about the same page.
    *
-   * A note on what this is NOT justified by, because the first version of this
-   * comment claimed it and the claim does not survive measurement. The
-   * reference target fills its accounts table from an XHR, and it is tempting
-   * to say the table is empty when `page.goto` resolves. It is not: `goto`
-   * waits for `load`, and the table measures 12 rows by then. The wait earns
-   * its place on the general principle, not on that application's behaviour,
-   * and `tests/replay/engine.test.ts` covers it with a page that genuinely adds
-   * a control late — which is the only honest way to show it is load-bearing.
+   * It is also load-bearing on the reference target specifically, and this
+   * comment has now been wrong about that twice in opposite directions. The
+   * first version said the accounts table is *always* empty when `page.goto`
+   * resolves — "measured, not assumed". The correction said it is *never*
+   * empty, because `goto` waits for `load` and the table measures 12 rows by
+   * then, so the wait "earns its place on the general principle, not on that
+   * application's behaviour". Both were one probe of a race, generalised to a
+   * flat fact, and labelled measured.
+   *
+   * What is actually true is intermittent, which is worse than either, because
+   * intermittent is what produces flake. ParaBank fills that table from an XHR
+   * that can land after `load`. Counting exactly what the engine counts next —
+   * `link_12345`'s only rung, evaluated with no waiting — over six samples of
+   * 40 navigations: 2, 0, 0, 0, 0, 1 zero-match, so 3 in 240 here. The final
+   * review, on a container under different load, measured 8/40 and 2/40 on the
+   * same probe. The rate is not a property of the application; it is a property
+   * of how busy it is, and it ranges over an order of magnitude.
+   *
+   * End to end, with this wait removed: 2 failures in 145 live replays, both
+   * `s1:extract:link_12345 — no-match — no rung of the chain resolved to
+   * anything on this page`. With it: 0 in 115. Those are the samples; a
+   * five-run report would have seen nothing on most attempts, which is the
+   * point.
+   *
+   * `tests/replay/engine.test.ts` covers the mechanism container-free, with a
+   * page that genuinely adds a control late. That is what makes it *provable*;
+   * the numbers above are why it is not merely prudent.
    */
   controlBudgetMs?: number;
   /** Supplied when a declared recovery needs to re-authenticate. */
