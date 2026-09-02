@@ -173,6 +173,34 @@ async function walk(page: Page, ep: number): Promise<RawNode[]> {
         stale.removeAttribute(attr);
       }
 
+      // Text that could be labelling something, measured once. A legacy form
+      // puts its labels in a neighbouring cell rather than in a `<label for=>`,
+      // so `.labels` is empty and an unlabelled control has no accessible name
+      // at all — nine identical unnamed textboxes on this target's bill-pay
+      // form, which a model cannot tell apart and therefore cannot fill.
+      //
+      // This is the same pathology tier 3 exists to solve for *targeting*,
+      // applied one layer up at *perception*: the label is not associated, but
+      // it is right there on the screen, and where it sits is what says which
+      // field it names.
+      const labelCandidates: Array<{ text: string; box: DOMRect }> = [];
+      const textWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      let textNode: Node | null;
+      while ((textNode = textWalker.nextNode()) !== null) {
+        const raw = (textNode.nodeValue ?? "").replace(/\s+/g, " ").trim();
+        if (raw === "" || raw.length > 40) continue;
+        const parentEl = textNode.parentElement;
+        if (parentEl === null) continue;
+        // A label inside the control it names is that control's own text, not a
+        // neighbour pointing at it.
+        if (parentEl.closest("button, a, select, option") !== null) continue;
+        const range = document.createRange();
+        range.selectNodeContents(textNode);
+        const box = range.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) continue;
+        labelCandidates.push({ text: raw, box });
+      }
+
       for (const el of Array.from(document.querySelectorAll(selector))) {
         // Inlined from `isRenderedIn` — see the note above this function.
         const style = window.getComputedStyle(el);
@@ -215,6 +243,7 @@ async function walk(page: Page, ep: number): Promise<RawNode[]> {
         // Name: aria-label, then an associated <label>, then trimmed text
         // content, then (only for a button-shaped input, which has no text
         // content of its own) its value.
+        const editableGuess = (tag === "input" && !isButtonish) || tag === "textarea" || isContentEditable;
         let name = (el.getAttribute("aria-label") ?? "").replace(/\s+/g, " ").trim();
         if (name === "") {
           // Only form controls carry `.labels` at all — a bare `<a>` or
@@ -230,6 +259,41 @@ async function walk(page: Page, ep: number): Promise<RawNode[]> {
         if (name === "") name = (el.textContent ?? "").replace(/\s+/g, " ").trim();
         if (name === "" && tag === "input" && isButtonish) {
           name = ((el as HTMLInputElement).value ?? "").replace(/\s+/g, " ").trim();
+        }
+
+        // Still nameless: ask the layout who is labelling it. Nearest text to
+        // the left on the same row wins, because that is where a form puts a
+        // label; failing that, nearest text directly above, which is where a
+        // stacked form puts one. Both are read from rendered geometry, so a
+        // label that only *looks* adjacent because of CSS still counts — which
+        // is the point, since that is what a person reading the screen sees.
+        //
+        // Deliberately not a guess of last resort: an element that has no
+        // label near it keeps its empty name, and the model is told nothing
+        // rather than told something invented.
+        if (name === "" && (editableGuess || tag === "select")) {
+          const box = el.getBoundingClientRect();
+          let best = "";
+          let bestScore = Infinity;
+          for (const cand of labelCandidates) {
+            const sameRow = cand.box.top < box.bottom && cand.box.bottom > box.top;
+            const toLeft = cand.box.right <= box.left + 1;
+            const above = cand.box.bottom <= box.top + 1;
+            const overlapsX = cand.box.left < box.right && cand.box.right > box.left;
+            // Left on the same row beats above; nearer beats further. The +1000
+            // keeps every above-candidate behind every left-candidate rather
+            // than letting a very close label above outrank the real one beside.
+            const score = sameRow && toLeft
+              ? box.left - cand.box.right
+              : above && overlapsX
+                ? 1000 + (box.top - cand.box.bottom)
+                : Infinity;
+            if (score < bestScore) {
+              bestScore = score;
+              best = cand.text;
+            }
+          }
+          if (bestScore < Infinity) name = best;
         }
 
         let value: string | null = null;
