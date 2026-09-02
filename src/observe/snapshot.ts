@@ -66,6 +66,24 @@ export interface ObservedNode {
    * one more sink that has to remember.
    */
   valueDigest: string | null;
+  /**
+   * Which option a `<select>` currently has chosen, as a position — `null` for
+   * everything else.
+   *
+   * A digest cannot answer the question a model actually has after choosing an
+   * option, which is "did that work?". Contents are reported as present or
+   * empty and never quoted, and a dropdown that arrives with a default is
+   * *always* present: it reads the same before and after, so the model gets no
+   * signal at all. Observed live, that is not a theoretical concern — a run
+   * chose the right option, could not see that it had, chose it three more
+   * times and died a dead end.
+   *
+   * A position is the smallest thing that answers it. It says the selection
+   * moved without saying what to, and the option list is already in `name`, so
+   * a model can count to the one it meant. Nothing is revealed that was not
+   * already on offer.
+   */
+  selectedIndex: number | null;
   editable: boolean;
 }
 
@@ -153,6 +171,7 @@ interface RawNode {
   role: string;
   name: string;
   value: string | null;
+  selectedIndex: number | null;
   editable: boolean;
 }
 
@@ -164,6 +183,7 @@ async function walk(page: Page, ep: number): Promise<RawNode[]> {
         role: string;
         name: string;
         value: string | null;
+        selectedIndex: number | null;
         editable: boolean;
       }> = [];
       let counter = 0;
@@ -296,6 +316,7 @@ async function walk(page: Page, ep: number): Promise<RawNode[]> {
           if (bestScore < Infinity) name = best;
         }
 
+        const selectedIndex = tag === "select" ? (el as HTMLSelectElement).selectedIndex : null;
         let value: string | null = null;
         if (tag === "input" && !isButtonish) value = (el as HTMLInputElement).value;
         else if (tag === "textarea") value = (el as HTMLTextAreaElement).value;
@@ -308,7 +329,7 @@ async function walk(page: Page, ep: number): Promise<RawNode[]> {
         counter += 1;
         el.setAttribute(attr, handle);
 
-        results.push({ handle, role, name, value, editable });
+        results.push({ handle, role, name, value, selectedIndex, editable });
       }
 
       return results;
@@ -358,6 +379,7 @@ export async function observe(page: Page, opts?: { screenshot?: boolean }): Prom
     role: n.role,
     name: n.name,
     valueDigest: valueDigestOf(n.value),
+    selectedIndex: n.selectedIndex,
     editable: n.editable,
   }));
 

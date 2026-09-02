@@ -26,9 +26,9 @@ const obsWithNodes: Observation = {
   url: "http://localhost:8081/parabank/overview.htm",
   title: "ParaBank | Accounts Overview",
   nodes: [
-    { handle: "o1n0", role: "link", name: "Accounts Overview", valueDigest: null, editable: false },
-    { handle: "o1n1", role: "combobox", name: "All Credit Debit", valueDigest: "digestAll", editable: true },
-    { handle: "o1n2", role: "button", name: "Go", valueDigest: null, editable: false },
+    { handle: "o1n0", role: "link", name: "Accounts Overview", valueDigest: null, selectedIndex: null, editable: false },
+    { handle: "o1n1", role: "combobox", name: "All Credit Debit", valueDigest: "digestAll", selectedIndex: null, editable: true },
+    { handle: "o1n2", role: "button", name: "Go", valueDigest: null, selectedIndex: null, editable: false },
   ],
   screenshot: null,
 };
@@ -386,7 +386,7 @@ describe("the recorded exchange", () => {
       // Handles and values are deliberately not part of a cassette's match key
       // (src/discover/cassette.ts), so anything goes here — which is the point:
       // a replay in a fresh process sees different handles for the same page.
-      nodes: turn.nodes.map((node, index) => ({ ...node, handle: `replay${index}`, valueDigest: null })),
+      nodes: turn.nodes.map((node, index) => ({ ...node, handle: `replay${index}`, valueDigest: null, selectedIndex: null })),
       screenshot: null,
     };
   }
