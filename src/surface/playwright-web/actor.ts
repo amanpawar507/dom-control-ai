@@ -1,6 +1,7 @@
 import type { Locator, Page } from "playwright";
 import type { Action } from "../types.js";
 import { gate, type GateVerdict, type PolicyConfig } from "../../policy/gate.js";
+import { controlNameEvidence } from "../../policy/risk.js";
 import type { RunLogger } from "../../evidence/logger.js";
 import { HANDLE_ATTR } from "./resolver.js";
 
@@ -183,13 +184,14 @@ export class WebActor {
   private async judge(
     action: Action,
     claimedName: string | null,
-  ): Promise<{ verdict: GateVerdict; names: string[] | null }> {
+  ): Promise<{ verdict: GateVerdict; names: string[] | null; url: string }> {
     const url = action.type === "navigate" ? (action.url ?? this.page.url()) : this.page.url();
     const named = await this.namesFor(action, claimedName);
-    if (!named.ok) return { verdict: { decision: "refuse", reason: named.reason }, names: null };
+    if (!named.ok) return { verdict: { decision: "refuse", reason: named.reason }, names: null, url };
     return {
       verdict: gate(this.cfg, { url, action: action.type, controlNames: named.names }),
       names: named.names,
+      url,
     };
   }
 
@@ -236,15 +238,22 @@ export class WebActor {
   }
 
   async act(action: Action, claimedName: string | null): Promise<void> {
-    const { verdict, names } = await this.judge(action, claimedName);
+    const { verdict, names, url } = await this.judge(action, claimedName);
     // Both are recorded: what the caller said it was acting on, and what the
     // gate actually judged. A caller whose label disagrees with the element is
     // then visible in the evidence rather than invisible in it.
+    //
+    // What "what the gate judged" may say in a file is `controlNameEvidence`'s
+    // decision, not this one's — the names read off an element can be its
+    // contents, and this log line was one of the three putting them on disk
+    // verbatim. Judged on the same url the verdict was reached from, so the two
+    // cannot disagree about which rules were even eligible to fire.
+    const evidence = controlNameEvidence(url, action.type, names ?? [], this.cfg.riskRules);
     this.log.log({
       kind: "gate",
       action: action.type,
       claimedName,
-      controlNames: names,
+      ...evidence,
       verdict,
     });
 
@@ -279,7 +288,7 @@ export class WebActor {
       kind: "acted",
       action: action.type,
       claimedName,
-      controlNames: names,
+      ...evidence,
       url: this.page.url(),
     });
   }

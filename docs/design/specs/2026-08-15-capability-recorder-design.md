@@ -748,8 +748,39 @@ and none would be built if it were not.
 |---|---|---|
 | 1 | Surface abstraction, session provider, schema, policy gate, target harness | Scripted run drives the target end to end, no model |
 | 2 | Discovery loop, tool vocabulary, recorder, binding proving | A real model-driven run writes a valid artifact |
-| 3 | Replay engine, runtime-condition taxonomy, stability harness, evidence | Success, business-outcome, and hard-failure replays recorded |
+| 3 | Replay engine, runtime-condition taxonomy, stability harness, evidence | Success, business-outcome, and hard-failure replays recorded — **met**, plus a fourth outcome the criterion did not anticipate: a moved surface making two proven rungs disagree, refused rather than guessed |
 | 4 | Lease, console, cross-variant overlay, write-up | Full thread runs from a clean clone |
+
+**What phase 3 added to the design rather than merely implementing.** Record-time
+proving established that every rung of a chain resolved to the *same* element.
+Replay had no counterpart — the `tag` fingerprint is defeated by construction at
+tier 3, whose `accepts` list guarantees a wrong element carries the right tag.
+
+The chain itself turned out to be the answer. Every rung was independently
+proven against one element, so two rungs naming different elements at replay is
+evidence the surface has moved since recording, and neither answer can be
+trusted. That makes the chain a **corroboration set** rather than a fallback
+ladder, and it uses evidence the artifact already holds — no new recorded field,
+no new schema. It costs a full chain walk per control instead of an early exit,
+which is the right trade when determinism is the product.
+
+**What the stability harness can and cannot show.** It reports whether N runs
+agree on status and on resolved tier per control, and it can name a divergence
+rather than averaging it into a pass rate — which is the property that makes it
+evidence at all. What it cannot do is establish determinism from a small sample:
+runs taken sequentially, in one process, sharing a session, seconds apart, hold
+most of the environment fixed. Measured on this target, a deliberately removed
+wait produced roughly 7% flake that a five-run report missed two times in three.
+So a passing report is a failure to disprove non-determinism, which is weaker
+than a demonstration of it, and the honest way to strengthen it is more runs
+across more varied conditions rather than a more confident sentence.
+
+Two limits are inherent and stated rather than hidden. A single-rung binding has
+nothing to corroborate it, and reports how many rungs agreed so a reader can see
+the difference. And correlated drift — a page that moves as a whole, where every
+rung agrees on the wrong element — is not closable with the evidence an artifact
+holds; it needs a second source, which is what a fingerprint carrying a format
+class would be if the recorder could infer one honestly.
 
 Optional, if phase 4 completes early: a second `Surface` adapter against the
 macOS accessibility API, resolving the same semantic controls on a native

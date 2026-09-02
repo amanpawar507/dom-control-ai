@@ -10,7 +10,12 @@ export interface LogEvent {
 export class RunLogger {
   private readonly file: string;
 
-  constructor(private readonly runId: string, dir = "evidence") {
+  /**
+   * Public because a `ReplayResult` carries `evidence.runId` — the key that
+   * ties a returned result back to the trail that explains it. A correlation
+   * id is not a secret, and `path()` beside it is already public.
+   */
+  constructor(readonly runId: string, dir = "evidence") {
     const runDir = join(dir, runId);
     mkdirSync(runDir, { recursive: true });
     this.file = join(runDir, "run.jsonl");

@@ -96,7 +96,15 @@ describe("proveControl", () => {
       { scope: [], chain: [{ tier: 1, by: "role", role: "button", name: "Find Transactions" }] },
       {},
     );
-    expect(res).toEqual({ ok: false, reason: "ambiguous", tier: 1, count: 4 });
+    expect(res).toEqual({
+      ok: false,
+      reason: "ambiguous",
+      tier: 1,
+      count: 4,
+      // Every candidate is stamped and reported by handle (`Resolution`), so
+      // this stays an exact-shape assertion rather than being loosened.
+      candidates: [expect.any(String), expect.any(String), expect.any(String), expect.any(String)],
+    });
   });
 
   it("orders the chain by what proved unique, not by tier number", async () => {

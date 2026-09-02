@@ -172,11 +172,21 @@ describe("WebActor — escalate", () => {
     expect(log.events[0]).toMatchObject({
       kind: "gate",
       // The disagreement is the audit trail: the caller said one thing, the
-      // page said another, and the verdict followed the page.
+      // page said another, and the verdict followed the page. Both halves are
+      // still here — `claimedName` is what the caller said, `controlNames` is
+      // what made the verdict what it is.
       claimedName: "Accounts Overview",
-      controlNames: ["Clean", "Accounts Overview"],
+      // Only the name a rule matched. The gate was handed both names and
+      // classified on both; the file records the one that did the work, because
+      // the other is page text and page text is how a `<select>`'s options —
+      // account numbers, on the real target — used to reach disk through this
+      // very line. See `controlNameEvidence`.
+      controlNames: ["Clean"],
       verdict: { decision: "escalate", risk: "irreversible" },
     });
+    // The gate saw more than the file shows, and the file says so rather than
+    // implying "Clean" was all there was to read.
+    expect(typeof log.events[0]?.["controlNamesDigest"]).toBe("string");
   });
 
   it("escalates on what the element is, wherever the page happens to be", async () => {

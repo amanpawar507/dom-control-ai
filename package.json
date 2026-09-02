@@ -12,7 +12,8 @@
     "target:down": "docker compose down",
     "target:wait": "node scripts/target-wait.mjs",
     "smoke": "tsx scripts/phase1-smoke.mts",
-    "discover": "tsx --env-file-if-exists=.env scripts/discover.mts"
+    "discover": "tsx --env-file-if-exists=.env scripts/discover.mts",
+    "stability": "tsx scripts/stability.mts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
