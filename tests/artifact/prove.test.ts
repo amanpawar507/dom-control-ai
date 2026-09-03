@@ -216,6 +216,32 @@ describe("proveControl", () => {
     })();
   });
 
+  it("pins a checkpoint's text, because for a checkpoint the text is the assertion", () => {
+    // The one exception to "a fingerprint is a shape check". Everywhere else,
+    // inferring a format from one observed value is the phase 1 defect. A
+    // checkpoint is different in kind: the model named that element *because*
+    // of what it says, so a binding that drops the words is not carrying the
+    // claim it was recorded to carry.
+    return (async () => {
+      await page.setContent(`<h1>Bill Payment Complete</h1>`);
+      const obs = await observe(page);
+      const heading = obs.nodes.find((n) => n.role === "heading")!;
+      const binding = await proveControl(page, heading, { pinText: true });
+      expect(binding.fingerprint?.matches).toBe("^Bill Payment Complete$");
+
+      // And it binds: the same chain refuses a different heading rather than
+      // resolving to it. Without the pin this is where a checkpoint goes
+      // vacuous — the text-pinning rung drops out silently, a weaker rung
+      // answers in its place, and the assertion holds on a page that never
+      // did the thing.
+      await page.setContent(`<h1>Bill Payment Service</h1>`);
+      const res = await resolveBinding(page, binding, {});
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("fingerprint-mismatch");
+    })();
+  });
+
   it("records no `matches`, because inferring one from a single sample is how phase 1 broke", () => {
     // A format class guessed from one observed value is always consistent with
     // that value, so it looks right at record time and fails later on the first

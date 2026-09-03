@@ -640,7 +640,8 @@ export async function discover(opts: DiscoverOptions): Promise<DiscoveryResult> 
 
         let control: string;
         try {
-          control = recorder.bind(node, await proveControl(page, node));
+          // A checkpoint pins the text it asserts — see `pinText` in prove.ts.
+          control = recorder.bind(node, await proveControl(page, node, { pinText: true }));
         } catch (thrown) {
           return halt("control-unprovable", { detail: (thrown as Error).message, control: "checkpoint" });
         }
