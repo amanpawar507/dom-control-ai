@@ -102,8 +102,27 @@ export interface Observation {
  * `role` is included regardless of tag, so an app that hand-rolls ARIA on a
  * `div` is still reachable.
  */
+/**
+ * What the model can see and name.
+ *
+ * Controls, and the headings and status regions that say what happened to
+ * them. The controls half is obvious; the other half was missing, and the
+ * absence had a concrete cost.
+ *
+ * A checkpoint can only name something observed. With controls alone, a flow
+ * that pays a bill could name nothing better than a navigation link that is on
+ * every page — so its recorded success condition held before the flow ran, and
+ * a replay whose payment silently failed would still report success. That is
+ * not a weak checkpoint; it is no checkpoint, on a capability that moves money.
+ *
+ * Headings and `role="status"`/`role="alert"` regions are where an application
+ * says whether it did the thing. They are read-only: reported as not editable,
+ * so nothing tries to type into one, but nameable — which is all a checkpoint
+ * needs. Bounded on purpose: this is not "all text", which would grow the
+ * snapshot without bound and cost tokens on every turn of every run.
+ */
 const OBSERVABLE_SELECTOR =
-  'a[href], button, input, textarea, select, [role], [contenteditable=""], [contenteditable="true"]';
+  'a[href], button, input, textarea, select, [role], [contenteditable=""], [contenteditable="true"], h1, h2, h3';
 
 /**
  * Runs inside the page. Must not close over module scope — an evaluate

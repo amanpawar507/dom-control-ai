@@ -211,6 +211,48 @@ describe("observe", () => {
     }
   });
 
+  it("surfaces the heading an application uses to say what it did", async () => {
+    // Without this a checkpoint can only name a control, and on a page whose
+    // controls are the same before and after, the strongest available success
+    // condition is one that was already true. Measured on the real target: a
+    // recorded bill-payment capability checkpointed a navigation link present
+    // on every page, so its success condition held on the empty form before
+    // anything had been paid.
+    const scratch = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    try {
+      await scratch.setContent(`
+        <h1 class="title">Bill Payment Complete</h1>
+        <a href="/x">Bill Pay</a>
+      `);
+      const nodes = await observe(scratch).then((o) => o.nodes);
+      expect(nodes.map((n) => n.name)).toContain("Bill Payment Complete");
+      // Read-only: nameable as a checkpoint, never something to type into.
+      expect(nodes.find((n) => n.name === "Bill Payment Complete")?.editable).toBe(false);
+    } finally {
+      await scratch.close();
+    }
+  });
+
+  it("does not surface page text at large, only what reports an outcome", async () => {
+    // The bound is the point. "All text" would grow every snapshot on every
+    // turn of every run, and a model paying for a page of prose it cannot act
+    // on is paying for noise.
+    const scratch = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    try {
+      await scratch.setContent(`
+        <h1>Outcome</h1>
+        <p>A paragraph of explanatory prose that is not an outcome.</p>
+        <div>An unroled div that is not one either.</div>
+      `);
+      const names = (await observe(scratch)).nodes.map((n) => n.name);
+      expect(names).toContain("Outcome");
+      expect(names.join(" ")).not.toContain("explanatory prose");
+      expect(names.join(" ")).not.toContain("unroled div");
+    } finally {
+      await scratch.close();
+    }
+  });
+
   it("omits the screenshot unless asked, because images dominate token cost", async () => {
     expect((await observe(page)).screenshot).toBeNull();
     expect((await observe(page, { screenshot: true })).screenshot).toBeTypeOf("string");
