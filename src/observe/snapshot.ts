@@ -276,7 +276,19 @@ async function walk(page: Page, ep: number): Promise<RawNode[]> {
             else if (inputType === "range") role = "slider";
             else role = "textbox";
           } else if (isContentEditable) role = "textbox";
-          else role = tag;
+          // `heading`, not `h1`. The role is what a tier-1 strategy targets by,
+          // and `h1` is a tag name rather than an ARIA role — so a binding
+          // built from it cannot resolve, proving discards the candidate, and
+          // the control falls back to a CSS selector that says `h1` and
+          // nothing about *which* heading. Measured on the real target: a
+          // checkpoint recorded that way resolved on the empty form, whose
+          // heading reads "Bill Payment Service", exactly as readily as on the
+          // confirmation page, whose heading reads "Bill Payment Complete".
+          // Getting the role right is what lets role+name pin the text, and
+          // for a checkpoint the text is the whole assertion.
+          else if (tag === "h1" || tag === "h2" || tag === "h3" || tag === "h4" || tag === "h5" || tag === "h6") {
+            role = "heading";
+          } else role = tag;
         }
 
         // Name: aria-label, then an associated <label>, then trimmed text

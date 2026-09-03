@@ -233,6 +233,23 @@ describe("observe", () => {
     }
   });
 
+  it("gives a heading the heading role, so role+name can pin which heading it is", async () => {
+    // `h1` is a tag, not an ARIA role, so a tier-1 strategy built from it can
+    // never resolve — proving discards it and the control falls back to a CSS
+    // selector saying `h1` and nothing about *which* heading. Measured on the
+    // real target, a checkpoint recorded that way resolved on the empty form
+    // ("Bill Payment Service") exactly as readily as on the confirmation
+    // ("Bill Payment Complete"), which is a success condition that cannot fail.
+    const scratch = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    try {
+      await scratch.setContent(`<h1>Bill Payment Complete</h1><h2>Details</h2>`);
+      const roles = (await observe(scratch)).nodes.map((n) => n.role);
+      expect(roles).toEqual(["heading", "heading"]);
+    } finally {
+      await scratch.close();
+    }
+  });
+
   it("does not surface page text at large, only what reports an outcome", async () => {
     // The bound is the point. "All text" would grow every snapshot on every
     // turn of every run, and a model paying for a page of prose it cannot act
