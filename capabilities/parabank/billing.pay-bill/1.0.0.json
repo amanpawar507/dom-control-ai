@@ -1,0 +1,394 @@
+{
+  "capability": {
+    "id": "billing.pay-bill",
+    "product": "parabank",
+    "version": 1,
+    "goal": "Pay a bill from account 13122. On the Bill Pay form, choose 13122 in the 'From account #' dropdown, enter payee name Acme Utilities, address 100 Main Street, city Springfield, state IL, zip code 62704, phone 5550100, account number 13122 in both the 'Account #' and 'Verify Account #' fields, and amount 25. Then click Send Payment. You are done when a Bill Payment Complete confirmation appears; name that confirmation heading as your checkpoint.",
+    "inputs": {
+      "textbox_payee_name": {
+        "type": "string"
+      },
+      "textbox_payee_name_2": {
+        "type": "string"
+      },
+      "textbox_address": {
+        "type": "string"
+      },
+      "textbox_city": {
+        "type": "string"
+      },
+      "textbox_state": {
+        "type": "string"
+      },
+      "textbox_zip_code": {
+        "type": "string"
+      },
+      "textbox_phone": {
+        "type": "string"
+      },
+      "textbox_account": {
+        "type": "string"
+      },
+      "textbox_verify_account": {
+        "type": "string"
+      },
+      "textbox_amount": {
+        "type": "string"
+      },
+      "combobox_12456_12567_12678_12789_12900_13011_132": {
+        "type": "string"
+      }
+    },
+    "outputs": {},
+    "status": "draft"
+  },
+  "flow": {
+    "steps": [
+      {
+        "kind": "act",
+        "action": "fill",
+        "control": "textbox_payee_name",
+        "value": "$textbox_payee_name"
+      },
+      {
+        "kind": "act",
+        "action": "fill",
+        "control": "textbox_payee_name",
+        "value": "$textbox_payee_name_2"
+      },
+      {
+        "kind": "act",
+        "action": "fill",
+        "control": "textbox_address",
+        "value": "$textbox_address"
+      },
+      {
+        "kind": "act",
+        "action": "fill",
+        "control": "textbox_city",
+        "value": "$textbox_city"
+      },
+      {
+        "kind": "act",
+        "action": "fill",
+        "control": "textbox_state",
+        "value": "$textbox_state"
+      },
+      {
+        "kind": "act",
+        "action": "fill",
+        "control": "textbox_zip_code",
+        "value": "$textbox_zip_code"
+      },
+      {
+        "kind": "act",
+        "action": "fill",
+        "control": "textbox_phone",
+        "value": "$textbox_phone"
+      },
+      {
+        "kind": "act",
+        "action": "fill",
+        "control": "textbox_account",
+        "value": "$textbox_account"
+      },
+      {
+        "kind": "act",
+        "action": "fill",
+        "control": "textbox_verify_account",
+        "value": "$textbox_verify_account"
+      },
+      {
+        "kind": "act",
+        "action": "fill",
+        "control": "textbox_amount",
+        "value": "$textbox_amount"
+      },
+      {
+        "kind": "act",
+        "action": "select",
+        "control": "combobox_12456_12567_12678_12789_12900_13011_132",
+        "value": "$combobox_12456_12567_12678_12789_12900_13011_132"
+      },
+      {
+        "kind": "act",
+        "action": "click",
+        "control": "button_send_payment"
+      },
+      {
+        "kind": "checkpoint",
+        "control": "link_bill_pay",
+        "state": "visible"
+      }
+    ]
+  },
+  "bindings": {
+    "tenant": "local",
+    "variant": "baseline",
+    "entryUrl": "http://localhost:8081/parabank/billpay.htm",
+    "controls": {
+      "textbox_payee_name": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 3,
+            "by": "anchor",
+            "anchorText": "Payee Name:",
+            "rel": "nearest-right",
+            "accepts": [
+              "input"
+            ]
+          },
+          {
+            "tier": 2,
+            "by": "css",
+            "value": "input[name=\"payee.name\"]"
+          }
+        ],
+        "fingerprint": {
+          "tag": "input"
+        }
+      },
+      "textbox_address": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 3,
+            "by": "anchor",
+            "anchorText": "Address:",
+            "rel": "nearest-right",
+            "accepts": [
+              "input"
+            ]
+          },
+          {
+            "tier": 2,
+            "by": "css",
+            "value": "input[name=\"payee.address.street\"]"
+          }
+        ],
+        "fingerprint": {
+          "tag": "input"
+        }
+      },
+      "textbox_city": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 3,
+            "by": "anchor",
+            "anchorText": "City:",
+            "rel": "nearest-right",
+            "accepts": [
+              "input"
+            ]
+          },
+          {
+            "tier": 2,
+            "by": "css",
+            "value": "input[name=\"payee.address.city\"]"
+          }
+        ],
+        "fingerprint": {
+          "tag": "input"
+        }
+      },
+      "textbox_state": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 3,
+            "by": "anchor",
+            "anchorText": "State:",
+            "rel": "nearest-right",
+            "accepts": [
+              "input"
+            ]
+          },
+          {
+            "tier": 2,
+            "by": "css",
+            "value": "input[name=\"payee.address.state\"]"
+          }
+        ],
+        "fingerprint": {
+          "tag": "input"
+        }
+      },
+      "textbox_zip_code": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 3,
+            "by": "anchor",
+            "anchorText": "Zip Code:",
+            "rel": "nearest-right",
+            "accepts": [
+              "input"
+            ]
+          },
+          {
+            "tier": 2,
+            "by": "css",
+            "value": "input[name=\"payee.address.zipCode\"]"
+          }
+        ],
+        "fingerprint": {
+          "tag": "input"
+        }
+      },
+      "textbox_phone": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 3,
+            "by": "anchor",
+            "anchorText": "Phone #:",
+            "rel": "nearest-right",
+            "accepts": [
+              "input"
+            ]
+          },
+          {
+            "tier": 2,
+            "by": "css",
+            "value": "input.input.phone-number-4659daa7-1e34-4361-b73e-c2745e8b98c4"
+          }
+        ],
+        "fingerprint": {
+          "tag": "input"
+        }
+      },
+      "textbox_account": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 3,
+            "by": "anchor",
+            "anchorText": "Account #:",
+            "rel": "nearest-right",
+            "accepts": [
+              "input"
+            ]
+          },
+          {
+            "tier": 2,
+            "by": "css",
+            "value": "input[name=\"payee.accountNumber\"]"
+          }
+        ],
+        "fingerprint": {
+          "tag": "input"
+        }
+      },
+      "textbox_verify_account": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 3,
+            "by": "anchor",
+            "anchorText": "Verify Account #:",
+            "rel": "nearest-right",
+            "accepts": [
+              "input"
+            ]
+          },
+          {
+            "tier": 2,
+            "by": "css",
+            "value": "input[name=\"verifyAccount\"]"
+          }
+        ],
+        "fingerprint": {
+          "tag": "input"
+        }
+      },
+      "textbox_amount": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 3,
+            "by": "anchor",
+            "anchorText": "Amount: $",
+            "rel": "nearest-right",
+            "accepts": [
+              "input"
+            ]
+          },
+          {
+            "tier": 2,
+            "by": "css",
+            "value": "input[name=\"amount\"]"
+          }
+        ],
+        "fingerprint": {
+          "tag": "input"
+        }
+      },
+      "combobox_12456_12567_12678_12789_12900_13011_132": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 3,
+            "by": "anchor",
+            "anchorText": "From account #:",
+            "rel": "nearest-right",
+            "accepts": [
+              "select"
+            ]
+          },
+          {
+            "tier": 2,
+            "by": "css",
+            "value": "select"
+          }
+        ],
+        "fingerprint": {
+          "tag": "select"
+        }
+      },
+      "button_send_payment": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 1,
+            "by": "role",
+            "role": "button",
+            "name": "Send Payment"
+          },
+          {
+            "tier": 2,
+            "by": "css",
+            "value": "input.button"
+          }
+        ],
+        "fingerprint": {
+          "tag": "input"
+        }
+      },
+      "link_bill_pay": {
+        "scope": [],
+        "chain": [
+          {
+            "tier": 3,
+            "by": "anchor",
+            "anchorText": "Transfer Funds",
+            "rel": "nearest-below",
+            "accepts": [
+              "a"
+            ]
+          },
+          {
+            "tier": 1,
+            "by": "role",
+            "role": "link",
+            "name": "Bill Pay"
+          }
+        ],
+        "fingerprint": {
+          "tag": "a"
+        }
+      }
+    }
+  }
+}

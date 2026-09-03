@@ -13,7 +13,8 @@
     "target:wait": "node scripts/target-wait.mjs",
     "smoke": "tsx scripts/phase1-smoke.mts",
     "discover": "tsx --env-file-if-exists=.env scripts/discover.mts",
-    "stability": "tsx scripts/stability.mts"
+    "stability": "tsx scripts/stability.mts",
+    "replay": "tsx scripts/replay.mts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

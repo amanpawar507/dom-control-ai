@@ -43,7 +43,7 @@ export const CAPABILITY_VERSION = 1;
 export const TYPE_ARGUMENT = "combobox_all_credit_debit";
 
 /** Pinned for the same reason every other run in this project pins it: tier 3 compares rendered rectangles. */
-const VIEWPORT = { width: 1280, height: 800 } as const;
+export const VIEWPORT = { width: 1280, height: 800 } as const;
 
 /**
  * What a replay of this capability is allowed to do on this target.

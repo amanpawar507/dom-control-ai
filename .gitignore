@@ -49,3 +49,4 @@ evidence/*
 # scratch and stay out.
 docs/demo/*
 !docs/demo/discovery-run.webm
+!docs/demo/replay-run.webm
