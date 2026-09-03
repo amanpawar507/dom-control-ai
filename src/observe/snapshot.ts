@@ -66,6 +66,24 @@ export interface ObservedNode {
    * one more sink that has to remember.
    */
   valueDigest: string | null;
+  /**
+   * Which option a `<select>` currently has chosen, as a position — `null` for
+   * everything else.
+   *
+   * A digest cannot answer the question a model actually has after choosing an
+   * option, which is "did that work?". Contents are reported as present or
+   * empty and never quoted, and a dropdown that arrives with a default is
+   * *always* present: it reads the same before and after, so the model gets no
+   * signal at all. Observed live, that is not a theoretical concern — a run
+   * chose the right option, could not see that it had, chose it three more
+   * times and died a dead end.
+   *
+   * A position is the smallest thing that answers it. It says the selection
+   * moved without saying what to, and the option list is already in `name`, so
+   * a model can count to the one it meant. Nothing is revealed that was not
+   * already on offer.
+   */
+  selectedIndex: number | null;
   editable: boolean;
 }
 
@@ -84,8 +102,27 @@ export interface Observation {
  * `role` is included regardless of tag, so an app that hand-rolls ARIA on a
  * `div` is still reachable.
  */
+/**
+ * What the model can see and name.
+ *
+ * Controls, and the headings and status regions that say what happened to
+ * them. The controls half is obvious; the other half was missing, and the
+ * absence had a concrete cost.
+ *
+ * A checkpoint can only name something observed. With controls alone, a flow
+ * that pays a bill could name nothing better than a navigation link that is on
+ * every page — so its recorded success condition held before the flow ran, and
+ * a replay whose payment silently failed would still report success. That is
+ * not a weak checkpoint; it is no checkpoint, on a capability that moves money.
+ *
+ * Headings and `role="status"`/`role="alert"` regions are where an application
+ * says whether it did the thing. They are read-only: reported as not editable,
+ * so nothing tries to type into one, but nameable — which is all a checkpoint
+ * needs. Bounded on purpose: this is not "all text", which would grow the
+ * snapshot without bound and cost tokens on every turn of every run.
+ */
 const OBSERVABLE_SELECTOR =
-  'a[href], button, input, textarea, select, [role], [contenteditable=""], [contenteditable="true"]';
+  'a[href], button, input, textarea, select, [role], [contenteditable=""], [contenteditable="true"], h1, h2, h3';
 
 /**
  * Runs inside the page. Must not close over module scope — an evaluate
@@ -153,6 +190,7 @@ interface RawNode {
   role: string;
   name: string;
   value: string | null;
+  selectedIndex: number | null;
   editable: boolean;
 }
 
@@ -164,6 +202,7 @@ async function walk(page: Page, ep: number): Promise<RawNode[]> {
         role: string;
         name: string;
         value: string | null;
+        selectedIndex: number | null;
         editable: boolean;
       }> = [];
       let counter = 0;
@@ -171,6 +210,34 @@ async function walk(page: Page, ep: number): Promise<RawNode[]> {
       // Clear first, in this same pass — see point 1 above.
       for (const stale of Array.from(document.querySelectorAll(`[${attr}]`))) {
         stale.removeAttribute(attr);
+      }
+
+      // Text that could be labelling something, measured once. A legacy form
+      // puts its labels in a neighbouring cell rather than in a `<label for=>`,
+      // so `.labels` is empty and an unlabelled control has no accessible name
+      // at all — nine identical unnamed textboxes on this target's bill-pay
+      // form, which a model cannot tell apart and therefore cannot fill.
+      //
+      // This is the same pathology tier 3 exists to solve for *targeting*,
+      // applied one layer up at *perception*: the label is not associated, but
+      // it is right there on the screen, and where it sits is what says which
+      // field it names.
+      const labelCandidates: Array<{ text: string; box: DOMRect }> = [];
+      const textWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      let textNode: Node | null;
+      while ((textNode = textWalker.nextNode()) !== null) {
+        const raw = (textNode.nodeValue ?? "").replace(/\s+/g, " ").trim();
+        if (raw === "" || raw.length > 40) continue;
+        const parentEl = textNode.parentElement;
+        if (parentEl === null) continue;
+        // A label inside the control it names is that control's own text, not a
+        // neighbour pointing at it.
+        if (parentEl.closest("button, a, select, option") !== null) continue;
+        const range = document.createRange();
+        range.selectNodeContents(textNode);
+        const box = range.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) continue;
+        labelCandidates.push({ text: raw, box });
       }
 
       for (const el of Array.from(document.querySelectorAll(selector))) {
@@ -209,12 +276,25 @@ async function walk(page: Page, ep: number): Promise<RawNode[]> {
             else if (inputType === "range") role = "slider";
             else role = "textbox";
           } else if (isContentEditable) role = "textbox";
-          else role = tag;
+          // `heading`, not `h1`. The role is what a tier-1 strategy targets by,
+          // and `h1` is a tag name rather than an ARIA role — so a binding
+          // built from it cannot resolve, proving discards the candidate, and
+          // the control falls back to a CSS selector that says `h1` and
+          // nothing about *which* heading. Measured on the real target: a
+          // checkpoint recorded that way resolved on the empty form, whose
+          // heading reads "Bill Payment Service", exactly as readily as on the
+          // confirmation page, whose heading reads "Bill Payment Complete".
+          // Getting the role right is what lets role+name pin the text, and
+          // for a checkpoint the text is the whole assertion.
+          else if (tag === "h1" || tag === "h2" || tag === "h3" || tag === "h4" || tag === "h5" || tag === "h6") {
+            role = "heading";
+          } else role = tag;
         }
 
         // Name: aria-label, then an associated <label>, then trimmed text
         // content, then (only for a button-shaped input, which has no text
         // content of its own) its value.
+        const editableGuess = (tag === "input" && !isButtonish) || tag === "textarea" || isContentEditable;
         let name = (el.getAttribute("aria-label") ?? "").replace(/\s+/g, " ").trim();
         if (name === "") {
           // Only form controls carry `.labels` at all — a bare `<a>` or
@@ -232,6 +312,42 @@ async function walk(page: Page, ep: number): Promise<RawNode[]> {
           name = ((el as HTMLInputElement).value ?? "").replace(/\s+/g, " ").trim();
         }
 
+        // Still nameless: ask the layout who is labelling it. Nearest text to
+        // the left on the same row wins, because that is where a form puts a
+        // label; failing that, nearest text directly above, which is where a
+        // stacked form puts one. Both are read from rendered geometry, so a
+        // label that only *looks* adjacent because of CSS still counts — which
+        // is the point, since that is what a person reading the screen sees.
+        //
+        // Deliberately not a guess of last resort: an element that has no
+        // label near it keeps its empty name, and the model is told nothing
+        // rather than told something invented.
+        if (name === "" && (editableGuess || tag === "select")) {
+          const box = el.getBoundingClientRect();
+          let best = "";
+          let bestScore = Infinity;
+          for (const cand of labelCandidates) {
+            const sameRow = cand.box.top < box.bottom && cand.box.bottom > box.top;
+            const toLeft = cand.box.right <= box.left + 1;
+            const above = cand.box.bottom <= box.top + 1;
+            const overlapsX = cand.box.left < box.right && cand.box.right > box.left;
+            // Left on the same row beats above; nearer beats further. The +1000
+            // keeps every above-candidate behind every left-candidate rather
+            // than letting a very close label above outrank the real one beside.
+            const score = sameRow && toLeft
+              ? box.left - cand.box.right
+              : above && overlapsX
+                ? 1000 + (box.top - cand.box.bottom)
+                : Infinity;
+            if (score < bestScore) {
+              bestScore = score;
+              best = cand.text;
+            }
+          }
+          if (bestScore < Infinity) name = best;
+        }
+
+        const selectedIndex = tag === "select" ? (el as HTMLSelectElement).selectedIndex : null;
         let value: string | null = null;
         if (tag === "input" && !isButtonish) value = (el as HTMLInputElement).value;
         else if (tag === "textarea") value = (el as HTMLTextAreaElement).value;
@@ -244,7 +360,7 @@ async function walk(page: Page, ep: number): Promise<RawNode[]> {
         counter += 1;
         el.setAttribute(attr, handle);
 
-        results.push({ handle, role, name, value, editable });
+        results.push({ handle, role, name, value, selectedIndex, editable });
       }
 
       return results;
@@ -294,6 +410,7 @@ export async function observe(page: Page, opts?: { screenshot?: boolean }): Prom
     role: n.role,
     name: n.name,
     valueDigest: valueDigestOf(n.value),
+    selectedIndex: n.selectedIndex,
     editable: n.editable,
   }));
 

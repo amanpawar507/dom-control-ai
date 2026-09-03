@@ -36,8 +36,23 @@ const { values } = parseArgs({
     model: { type: "string", default: DISCOVERY_MODEL },
     base: { type: "string", default: "http://localhost:8081/parabank" },
     entry: { type: "string" },
-    cassette: { type: "string", default: "tests/cassettes/parabank-account-activity.json" },
+    /**
+     * Where to record this run's exchange. No default, deliberately.
+     *
+     * It had one — the path of the cassette a previous run recorded — and two
+     * failed runs silently overwrote it, replacing a committed evidence
+     * artifact with a dead end. Nothing complained: the file is valid, the
+     * tests that read it are the only thing that noticed, and they noticed a
+     * commit later.
+     *
+     * A recording destination is a decision about which file to write, and a
+     * default that names an existing recording answers it wrongly by omission.
+     * Omit this and the run keeps its exchange in the evidence directory with
+     * the rest of its trail, where nothing is at risk.
+     */
+    cassette: { type: "string" },
     video: { type: "string" },
+    approve: { type: "boolean", default: false },
   },
 });
 
@@ -118,12 +133,51 @@ const POLICY: PolicyConfig = {
   },
   riskRules: [
     { tier: "irreversible", matchControl: "^(Clean|Shutdown|Admin Page)$" },
+    /**
+     * The controls that commit the act, not the links that lead to it.
+     *
+     * This rule exists because the first version did not have it, and a live
+     * run moved real fixture money through a gate that returned `allow/safe`
+     * on every step. The guarded list named `Bill Pay`, `Transfer Funds` and
+     * their siblings — which are the *navigation links* in the menu. The
+     * button that actually sends the payment is called `Send Payment`, matched
+     * nothing, and was classified safe.
+     *
+     * So the policy guarded the doorway and not the act. Anything entering the
+     * page by another route — a recorded capability whose `entryUrl` is the
+     * form itself, which is exactly what a replay does — never touches the
+     * link and never meets the rule. The submit control is the only place the
+     * money actually moves, and it is the thing worth naming.
+     *
+     * The navigation rule below stays. Refusing the doorway is still useful:
+     * it stops a wandering discovery run from arriving somewhere expensive by
+     * accident, which is a different job from stopping the act itself.
+     */
+    {
+      tier: "guarded",
+      matchControl: "^(Send Payment|Transfer|Apply Now|Open New Account|Update Profile|Send to Payee)$",
+    },
     {
       tier: "guarded",
       matchControl: "^(Transfer Funds|Bill Pay|Request Loan|Open New Account|Update Contact Info|Log Out)$",
     },
   ],
-  approved: false,
+  /**
+   * Withheld by default, and `--approve` grants it for one run only.
+   *
+   * `guarded` controls — the money-moving ones this target puts in the
+   * navigation of every authenticated page — are refused unless a capability
+   * has been approved by a human. Recording one therefore requires saying so
+   * at the command line, which is the point: the grant is a decision somebody
+   * makes, visible in the invocation, rather than a default nobody revisits.
+   *
+   * It does not weaken the two rules that matter. `irreversible` still
+   * escalates regardless of approval, so `Clean` and `Shutdown` remain
+   * unreachable. And the artifact is still recorded `status: "draft"` — a
+   * recorder that marked its own output approved would be granting itself the
+   * permission this flag exists to withhold.
+   */
+  approved: values.approve === true,
 };
 
 /**
@@ -193,14 +247,17 @@ const live = new AnthropicDriver({
   allowlist: ALLOWLIST_FOR_PROMPT,
 });
 
-mkdirSync(dirname(values.cassette), { recursive: true });
+// Absent `--cassette`, the exchange is kept beside the run's own evidence,
+// where it cannot overwrite a recording somebody committed on purpose.
+const cassettePath = values.cassette ?? join(dirname(log.path()), "exchange.json");
+mkdirSync(dirname(cassettePath), { recursive: true });
 /**
  * Every exchange this run pays for is written to disk as it happens, so a
  * single expenditure becomes a permanent replayable fixture rather than a
  * one-off. The recorder scrubs `fill`/`select` values structurally and runs
  * `redactDeep` over the whole record before writing (src/discover/cassette.ts).
  */
-const driver = recordCassette(values.cassette, live);
+const driver = recordCassette(cassettePath, live);
 
 console.log(`goal:      ${GOAL}`);
 console.log(`id:        ${values.id}`);
@@ -208,7 +265,7 @@ console.log(`model:     ${values.model}`);
 console.log(`entry:     ${ENTRY}`);
 console.log(`ceiling:   $${CEILING_USD.toFixed(2)} at $${RATE.inPerM}/1M in, $${RATE.outPerM}/1M out`);
 console.log(`max steps: ${MAX_STEPS}`);
-console.log(`cassette:  ${values.cassette}`);
+console.log(`cassette:  ${cassettePath}`);
 console.log(`evidence:  ${log.path()}`);
 console.log("");
 

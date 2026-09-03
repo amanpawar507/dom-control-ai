@@ -324,7 +324,37 @@ async function resolvesToTarget(page: Page, strategy: Strategy, obsHandle: strin
  * try). Within tier 2's own escalating family of selectors the first
  * candidate that proves — weakest first — is the one kept.
  */
-export async function proveControl(page: Page, node: ObservedNode): Promise<Binding> {
+/**
+ * `pinText` records the element's own text as the binding's fingerprint, and
+ * exists for exactly one caller: a checkpoint.
+ *
+ * A fingerprint is a shape check everywhere else, deliberately — inferring a
+ * format class from one observed value is how phase 1 shipped a currency
+ * fingerprint that rejected negative balances. A checkpoint is different in
+ * kind. The text is not a sample of what this element usually holds; it is the
+ * assertion. The model named that heading *because* it says the payment
+ * completed, and a binding that does not carry the words is not carrying the
+ * claim.
+ *
+ * Without it a checkpoint stays vacuous even with a text-pinning rung in its
+ * chain, and the reason is subtle enough to be worth writing down. The chain
+ * is a corroboration set, and a rung that no longer resolves counts as drift
+ * rather than disagreement — right for a control, because a missing rung
+ * suggests nothing about *which* element the others found. But for a
+ * checkpoint the text-pinning rung is the only one that knows what is being
+ * asserted, so its silent absence lets a weaker rung answer in its place.
+ * Measured: a chain of `role+name "Bill Payment Complete"` then `css h1`
+ * resolved on the empty form, whose heading reads "Bill Payment Service",
+ * because tier 1 dropped out and tier 2 did not care.
+ *
+ * As a fingerprint it applies to *every* rung, so no rung can answer for a
+ * different heading regardless of which ones survive.
+ */
+export async function proveControl(
+  page: Page,
+  node: ObservedNode,
+  opts: { pinText?: boolean } = {},
+): Promise<Binding> {
   const loc = page.locator(`[${OBS_ATTR}="${node.handle}"]`);
   const count = await loc.count();
   if (count !== 1) {
@@ -403,5 +433,9 @@ export async function proveControl(page: Page, node: ObservedNode): Promise<Bind
   // reproduces that defect by construction: the one sample is always
   // consistent with itself. A caller who knows the format can set `matches`
   // deliberately; the recorder will not invent one.
-  return { scope: [], chain: survivors, fingerprint: { tag: facts.tag } };
+  const fingerprint =
+    opts.pinText === true && node.name !== ""
+      ? { tag: facts.tag, matches: `^${node.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$` }
+      : { tag: facts.tag };
+  return { scope: [], chain: survivors, fingerprint };
 }

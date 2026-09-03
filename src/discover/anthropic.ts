@@ -200,7 +200,18 @@ function renderObservation(observation: Observation): string {
     return "This page has no addressable controls.";
   }
   const rows = observation.nodes.map((node) => {
-    const contents = node.valueDigest === null ? "" : node.valueDigest === "" ? " | empty" : " | filled";
+    // A dropdown reports which option it is on rather than merely that it holds
+    // one. "filled" is true of a select before and after a choice is made, so
+    // it answers nothing a model needs; the position moves when the selection
+    // does, and the options are already listed in `name` for it to count.
+    const contents =
+      node.selectedIndex !== null
+        ? ` | option ${node.selectedIndex + 1} selected`
+        : node.valueDigest === null
+          ? ""
+          : node.valueDigest === ""
+            ? " | empty"
+            : " | filled";
     const editable = node.editable ? " | editable" : "";
     return `  ${node.handle} | ${node.role} | ${node.name}${editable}${contents}`;
   });

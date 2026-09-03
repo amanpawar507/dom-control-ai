@@ -161,6 +161,115 @@ describe("observe", () => {
     expect(obs.nodes.some((n) => n.name === "OffscreenControl")).toBe(true);
   });
 
+  it("names an unlabelled field from the label sitting beside it", async () => {
+    // The pathology this target ships everywhere: a label in a neighbouring
+    // cell, associated with nothing. `.labels` is empty, so without this the
+    // model receives a row of identical unnamed textboxes and cannot say which
+    // one it means. Same problem tier 3 solves for targeting, one layer up.
+    const scratch = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    try {
+      await scratch.setContent(`
+        <table>
+          <tr><td>Payee Name:</td><td><input name="payee.name"></td></tr>
+          <tr><td>Amount: $</td><td><input name="amount"></td></tr>
+        </table>
+      `);
+      const names = (await observe(scratch)).nodes.filter((n) => n.editable).map((n) => n.name);
+      expect(names).toEqual(["Payee Name:", "Amount: $"]);
+    } finally {
+      await scratch.close();
+    }
+  });
+
+  it("prefers the label beside a field over one above it", async () => {
+    // Both are candidates and a form can have both. The one on the same row is
+    // the one a person reads as belonging to the field.
+    const scratch = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    try {
+      await scratch.setContent(`
+        <div>Section heading</div>
+        <table><tr><td>Zip Code:</td><td><input name="zip"></td></tr></table>
+      `);
+      const names = (await observe(scratch)).nodes.filter((n) => n.editable).map((n) => n.name);
+      expect(names).toEqual(["Zip Code:"]);
+    } finally {
+      await scratch.close();
+    }
+  });
+
+  it("leaves a field nameless rather than inventing a name for it", async () => {
+    // The fallback is evidence, not a guess. A field with nothing near it gets
+    // no name, and the model is told nothing rather than told something made
+    // up — which it would then use to address the wrong control.
+    const scratch = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    try {
+      await scratch.setContent(`<input name="orphan">`);
+      const names = (await observe(scratch)).nodes.filter((n) => n.editable).map((n) => n.name);
+      expect(names).toEqual([""]);
+    } finally {
+      await scratch.close();
+    }
+  });
+
+  it("surfaces the heading an application uses to say what it did", async () => {
+    // Without this a checkpoint can only name a control, and on a page whose
+    // controls are the same before and after, the strongest available success
+    // condition is one that was already true. Measured on the real target: a
+    // recorded bill-payment capability checkpointed a navigation link present
+    // on every page, so its success condition held on the empty form before
+    // anything had been paid.
+    const scratch = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    try {
+      await scratch.setContent(`
+        <h1 class="title">Bill Payment Complete</h1>
+        <a href="/x">Bill Pay</a>
+      `);
+      const nodes = await observe(scratch).then((o) => o.nodes);
+      expect(nodes.map((n) => n.name)).toContain("Bill Payment Complete");
+      // Read-only: nameable as a checkpoint, never something to type into.
+      expect(nodes.find((n) => n.name === "Bill Payment Complete")?.editable).toBe(false);
+    } finally {
+      await scratch.close();
+    }
+  });
+
+  it("gives a heading the heading role, so role+name can pin which heading it is", async () => {
+    // `h1` is a tag, not an ARIA role, so a tier-1 strategy built from it can
+    // never resolve — proving discards it and the control falls back to a CSS
+    // selector saying `h1` and nothing about *which* heading. Measured on the
+    // real target, a checkpoint recorded that way resolved on the empty form
+    // ("Bill Payment Service") exactly as readily as on the confirmation
+    // ("Bill Payment Complete"), which is a success condition that cannot fail.
+    const scratch = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    try {
+      await scratch.setContent(`<h1>Bill Payment Complete</h1><h2>Details</h2>`);
+      const roles = (await observe(scratch)).nodes.map((n) => n.role);
+      expect(roles).toEqual(["heading", "heading"]);
+    } finally {
+      await scratch.close();
+    }
+  });
+
+  it("does not surface page text at large, only what reports an outcome", async () => {
+    // The bound is the point. "All text" would grow every snapshot on every
+    // turn of every run, and a model paying for a page of prose it cannot act
+    // on is paying for noise.
+    const scratch = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    try {
+      await scratch.setContent(`
+        <h1>Outcome</h1>
+        <p>A paragraph of explanatory prose that is not an outcome.</p>
+        <div>An unroled div that is not one either.</div>
+      `);
+      const names = (await observe(scratch)).nodes.map((n) => n.name);
+      expect(names).toContain("Outcome");
+      expect(names.join(" ")).not.toContain("explanatory prose");
+      expect(names.join(" ")).not.toContain("unroled div");
+    } finally {
+      await scratch.close();
+    }
+  });
+
   it("omits the screenshot unless asked, because images dominate token cost", async () => {
     expect((await observe(page)).screenshot).toBeNull();
     expect((await observe(page, { screenshot: true })).screenshot).toBeTypeOf("string");
