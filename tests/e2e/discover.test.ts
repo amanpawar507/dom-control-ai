@@ -147,6 +147,11 @@ describe("discovery against the live ParaBank target", () => {
     // proven at tier 0. Every chain had to be earned from role, geometry or
     // structure — which is the point of running this against the container at
     // all rather than against markup written to be easy.
+    const checkpointControls = new Set(
+      result.artifact.flow.steps
+        .filter((s): s is Extract<typeof s, { kind: "checkpoint" }> => s.kind === "checkpoint")
+        .map((s) => s.control),
+    );
     for (const [name, binding] of Object.entries(controls)) {
       expect(binding.chain.length, `${name} has an empty chain`).toBeGreaterThan(0);
       for (const strategy of binding.chain) {
@@ -170,7 +175,26 @@ describe("discovery against the live ParaBank target", () => {
       // Both halves are asserted, so neither a dropped fingerprint nor a
       // guessed one can arrive unnoticed.
       expect(binding.fingerprint?.tag, `${name} carries no fingerprint`).toBeTruthy();
-      expect(binding.fingerprint?.matches, `${name} carries a value shape discovery cannot have proven`).toBeUndefined();
+
+      // `matches` is absent on every control the flow *acts* on, and present on
+      // exactly one: the control the flow checkpoints.
+      //
+      // The absence is the phase 1 lesson. A format class inferred from one
+      // observed value is always consistent with that value, looks right at
+      // record time, and fails on the first legitimate variation — an inferred
+      // currency fingerprint rejected every negative balance.
+      //
+      // The presence is the exception that lesson does not cover. A
+      // checkpoint's text is not a sample of what its element usually holds;
+      // it is the assertion the model made. A checkpoint that drops the words
+      // is one whose success condition holds on a page that never did the
+      // thing — measured, three times, before this rule existed.
+      const isCheckpoint = checkpointControls.has(name);
+      if (isCheckpoint) {
+        expect(binding.fingerprint?.matches, `${name} is a checkpoint and must pin what it asserts`).toBeTruthy();
+      } else {
+        expect(binding.fingerprint?.matches, `${name} carries a value shape discovery cannot have proven`).toBeUndefined();
+      }
       const probe: Binding = { scope: binding.scope, chain: binding.chain };
       const res = await resolveBinding(page, probe, {});
       expect(res.ok, `${name} did not resolve: ${JSON.stringify(res)}`).toBe(true);
